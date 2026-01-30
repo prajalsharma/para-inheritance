@@ -1,0 +1,297 @@
+/**
+ * Permission Enforcement Utilities
+ *
+ * This module provides utilities for enforcing permission policies
+ * on transactions before they are signed and submitted.
+ *
+ * Para's permission system works by:
+ * 1. Defining policies with allowlists and blocked actions
+ * 2. Checking transactions against these policies before signing
+ * 3. Rejecting transactions that violate policy rules
+ *
+ * @see https://docs.getpara.com/v2/react/guides/permissions
+ * @see https://docs.getpara.com/v2/concepts/universal-embedded-wallets
+ */
+
+import type {
+  PermissionPolicy,
+  TransactionValidation,
+  BlockedAction,
+} from '../types/permissions';
+
+/**
+ * Transaction request structure for validation
+ */
+export interface TransactionRequest {
+  /** Recipient address */
+  to: string;
+  /** Value in wei */
+  value?: string;
+  /** Transaction data (for contract calls) */
+  data?: string;
+  /** Chain ID */
+  chainId: string;
+  /** Transaction type */
+  type?: 'transfer' | 'contractCall' | 'contractDeploy' | 'approve';
+}
+
+/**
+ * Validates a transaction against a permission policy
+ *
+ * This function should be called BEFORE attempting to sign any transaction
+ * for a child wallet. It enforces the parent-defined permission rules.
+ *
+ * @param transaction - The transaction to validate
+ * @param policy - The permission policy to check against
+ * @returns Validation result with allowed status and rejection reason
+ *
+ * @example
+ * ```tsx
+ * const validation = validateTransaction(
+ *   { to: '0x...', value: '1000000000000000000', chainId: '1' },
+ *   childPolicy
+ * );
+ *
+ * if (!validation.isAllowed) {
+ *   alert(`Transaction blocked: ${validation.rejectionReason}`);
+ *   return;
+ * }
+ *
+ * // Proceed with Para signing
+ * signTransaction({ walletId, rlpEncodedTxBase64, chainId });
+ * ```
+ */
+export function validateTransaction(
+  transaction: TransactionRequest,
+  policy: PermissionPolicy
+): TransactionValidation {
+  // Check if policy is active
+  if (!policy.isActive) {
+    return {
+      isAllowed: false,
+      rejectionReason: 'Permission policy is not active',
+      blockedByRule: 'POLICY_INACTIVE',
+    };
+  }
+
+  // Check if chain is allowed
+  if (!policy.allowedChains.includes(transaction.chainId)) {
+    return {
+      isAllowed: false,
+      rejectionReason: `Chain ${transaction.chainId} is not in the allowed chains list`,
+      blockedByRule: 'CHAIN_NOT_ALLOWED',
+    };
+  }
+
+  // Detect transaction type
+  const txType = detectTransactionType(transaction);
+
+  // Check blocked actions
+  const blockedActionCheck = checkBlockedActions(txType, policy.blockedActions);
+  if (!blockedActionCheck.isAllowed) {
+    return blockedActionCheck;
+  }
+
+  // For transfers, check allowlist
+  if (txType === 'transfer' || txType === 'contractCall') {
+    const allowlistCheck = checkAllowlist(transaction.to, policy);
+    if (!allowlistCheck.isAllowed) {
+      return allowlistCheck;
+    }
+
+    // Check merchant-specific limits
+    const merchantLimitCheck = checkMerchantLimits(transaction, policy);
+    if (!merchantLimitCheck.isAllowed) {
+      return merchantLimitCheck;
+    }
+  }
+
+  // Check transaction amount limits
+  if (transaction.value) {
+    const amountCheck = checkTransactionAmount(transaction.value, policy);
+    if (!amountCheck.isAllowed) {
+      return amountCheck;
+    }
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Detects the type of transaction from its data
+ */
+function detectTransactionType(
+  transaction: TransactionRequest
+): 'transfer' | 'contractCall' | 'contractDeploy' | 'approve' {
+  // Explicit type provided
+  if (transaction.type) {
+    return transaction.type;
+  }
+
+  // Contract deployment (no 'to' address)
+  if (!transaction.to || transaction.to === '0x' || transaction.to === '') {
+    return 'contractDeploy';
+  }
+
+  // ERC20 approve signature: approve(address,uint256) = 0x095ea7b3
+  if (transaction.data?.startsWith('0x095ea7b3')) {
+    return 'approve';
+  }
+
+  // Has data = contract call, no data = simple transfer
+  if (transaction.data && transaction.data !== '0x' && transaction.data.length > 2) {
+    return 'contractCall';
+  }
+
+  return 'transfer';
+}
+
+/**
+ * Checks if the transaction type is blocked
+ */
+function checkBlockedActions(
+  txType: 'transfer' | 'contractCall' | 'contractDeploy' | 'approve',
+  blockedActions: BlockedAction[]
+): TransactionValidation {
+  const typeToAction: Record<string, BlockedAction> = {
+    contractDeploy: 'CONTRACT_DEPLOY',
+    contractCall: 'CONTRACT_INTERACTION',
+    approve: 'APPROVE_TOKEN_SPEND',
+  };
+
+  const action = typeToAction[txType];
+  if (action && blockedActions.includes(action)) {
+    return {
+      isAllowed: false,
+      rejectionReason: `${txType} transactions are blocked by policy`,
+      blockedByRule: action,
+    };
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Checks if the recipient is in the allowlist
+ */
+function checkAllowlist(
+  toAddress: string,
+  policy: PermissionPolicy
+): TransactionValidation {
+  // If TRANSFER_OUTSIDE_ALLOWLIST is blocked, enforce allowlist
+  if (policy.blockedActions.includes('TRANSFER_OUTSIDE_ALLOWLIST')) {
+    const normalizedTo = toAddress.toLowerCase();
+    const isAllowed = policy.allowlist.some(
+      (merchant) => merchant.address.toLowerCase() === normalizedTo
+    );
+
+    if (!isAllowed) {
+      return {
+        isAllowed: false,
+        rejectionReason: `Recipient ${toAddress} is not in the approved allowlist`,
+        blockedByRule: 'TRANSFER_OUTSIDE_ALLOWLIST',
+      };
+    }
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Checks merchant-specific transaction limits
+ */
+function checkMerchantLimits(
+  transaction: TransactionRequest,
+  policy: PermissionPolicy
+): TransactionValidation {
+  const normalizedTo = transaction.to.toLowerCase();
+  const merchant = policy.allowlist.find(
+    (m) => m.address.toLowerCase() === normalizedTo
+  );
+
+  if (merchant) {
+    // Check merchant-specific max transaction amount
+    if (merchant.maxTransactionAmount && transaction.value) {
+      const txValue = BigInt(transaction.value);
+      const maxAmount = BigInt(merchant.maxTransactionAmount);
+
+      if (txValue > maxAmount) {
+        return {
+          isAllowed: false,
+          rejectionReason: `Transaction amount exceeds merchant limit for ${merchant.name}`,
+          blockedByRule: 'MERCHANT_LIMIT_EXCEEDED',
+        };
+      }
+    }
+
+    // Check merchant-specific chain restrictions
+    if (merchant.approvedChains && merchant.approvedChains.length > 0) {
+      if (!merchant.approvedChains.includes(transaction.chainId)) {
+        return {
+          isAllowed: false,
+          rejectionReason: `Merchant ${merchant.name} is not approved on chain ${transaction.chainId}`,
+          blockedByRule: 'MERCHANT_CHAIN_NOT_ALLOWED',
+        };
+      }
+    }
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Checks global transaction amount limits
+ */
+function checkTransactionAmount(
+  value: string,
+  policy: PermissionPolicy
+): TransactionValidation {
+  if (policy.maxTransactionAmount) {
+    const txValue = BigInt(value);
+    const maxAmount = BigInt(policy.maxTransactionAmount);
+
+    if (txValue > maxAmount) {
+      return {
+        isAllowed: false,
+        rejectionReason: 'Transaction amount exceeds maximum allowed limit',
+        blockedByRule: 'MAX_TRANSACTION_EXCEEDED',
+      };
+    }
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Format wei to ETH for display
+ */
+export function formatWeiToEth(wei: string): string {
+  const value = BigInt(wei);
+  const eth = Number(value) / 1e18;
+  return eth.toFixed(6);
+}
+
+/**
+ * Parse ETH to wei
+ */
+export function parseEthToWei(eth: string): string {
+  const value = parseFloat(eth);
+  const wei = BigInt(Math.floor(value * 1e18));
+  return wei.toString();
+}
+
+/**
+ * Get human-readable description of a blocked action
+ */
+export function getBlockedActionDescription(action: BlockedAction): string {
+  const descriptions: Record<BlockedAction, string> = {
+    CONTRACT_DEPLOY: 'Deploying new smart contracts',
+    CONTRACT_INTERACTION: 'Interacting with smart contracts',
+    TRANSFER_OUTSIDE_ALLOWLIST: 'Sending to addresses not in allowlist',
+    SIGN_ARBITRARY_MESSAGE: 'Signing arbitrary messages',
+    APPROVE_TOKEN_SPEND: 'Approving token spending allowances',
+    NFT_TRANSFER: 'Transferring NFTs',
+  };
+
+  return descriptions[action] || action;
+}

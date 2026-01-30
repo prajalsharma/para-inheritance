@@ -1,0 +1,148 @@
+/**
+ * Para Allowance Wallet - App Styles
+ */
+
+/* Ensure Para modal is visible above all app content */
+cpsl-auth-modal,
+cpsl-overlay,
+cpsl-modal-v2 {
+  z-index: 999999 !important;
+}
+
+.app {
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.app-content {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+}
+
+.app-main {
+  padding: 2rem 0;
+  min-height: calc(100vh - 60px);
+}
+
+/* Loading Screen */
+.loading-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+}
+
+.loading-screen p {
+  margin-top: 1rem;
+  color: #666;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Auth Prompt */
+.auth-prompt-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem;
+}
+
+.auth-prompt {
+  background: white;
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.auth-prompt h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+  color: #1a1a1a;
+}
+
+.auth-prompt > p {
+  color: #666;
+  margin: 0 0 2rem;
+  line-height: 1.5;
+}
+
+.auth-button {
+  width: 100%;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: #6366f1;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 1rem;
+}
+
+.auth-button:hover {
+  background: #4f46e5;
+}
+
+.back-link {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  color: #666;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.back-link:hover {
+  color: #1a1a1a;
+}
+
+.powered-by {
+  margin: 1.5rem 0 0;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.powered-by a {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.powered-by a:hover {
+  text-decoration: underline;
+}
+
+.loading-state {
+  padding: 2rem 0;
+}
+
+.loading-state p {
+  margin-top: 1rem;
+  color: #666;
+}

@@ -1,0 +1,594 @@
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem;
+  color: #1a1a1a;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0;
+}
+
+.section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.section h2 {
+  font-size: 1.125rem;
+  margin: 0 0 0.5rem;
+  color: #1a1a1a;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+}
+
+.sectionDescription {
+  color: #666;
+  font-size: 0.875rem;
+  margin: 0 0 1rem;
+}
+
+.policyInfo {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.infoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.infoRow:last-child {
+  border-bottom: none;
+}
+
+.label {
+  color: #666;
+  font-size: 0.875rem;
+}
+
+.address {
+  font-size: 0.75rem;
+  color: #475569;
+  word-break: break-all;
+}
+
+.active {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.inactive {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.addButton {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6366f1;
+  background: white;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addButton:hover {
+  background: #6366f1;
+  color: white;
+}
+
+.addMerchantForm {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.addMerchantForm h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+}
+
+.formGroup {
+  margin-bottom: 1rem;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.formGroup input {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.formGroup input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.formActions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.cancelButton {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: #666;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #f3f4f6;
+}
+
+.saveButton {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background: #6366f1;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.saveButton:hover {
+  background: #4f46e5;
+}
+
+.saveButton:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.merchantList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.emptyList {
+  text-align: center;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.emptyList p {
+  margin: 0;
+  color: #666;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+.merchantCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.merchantInfo h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  color: #1a1a1a;
+}
+
+.merchantAddress {
+  font-size: 0.7rem;
+  color: #64748b;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.merchantDescription {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 0.25rem 0 0;
+}
+
+.merchantLimit {
+  font-size: 0.75rem;
+  color: #6366f1;
+  margin: 0.25rem 0 0;
+  font-weight: 500;
+}
+
+.removeButton {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  color: #ef4444;
+  background: white;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.removeButton:hover {
+  background: #fef2f2;
+}
+
+.blockedActionsList,
+.chainList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.actionToggle,
+.chainToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.actionToggle input,
+.chainToggle input {
+  display: none;
+}
+
+.toggleSlider {
+  width: 40px;
+  height: 22px;
+  background: #d1d5db;
+  border-radius: 11px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggleSlider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+input:checked + .toggleSlider {
+  background: #6366f1;
+}
+
+input:checked + .toggleSlider::after {
+  transform: translateX(18px);
+}
+
+.actionInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.actionName {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #1a1a1a;
+  text-transform: capitalize;
+}
+
+.actionDescription {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.chainName {
+  font-size: 0.875rem;
+  color: #1a1a1a;
+}
+
+.linkForm {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.linkButton {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background: #6366f1;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  background: #4f46e5;
+}
+
+.linkButton:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.linkedStatus {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+}
+
+.linkedIcon {
+  width: 32px;
+  height: 32px;
+  background: #10b981;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.linkedStatus p {
+  margin: 0 0 0.25rem;
+  font-weight: 500;
+  color: #065f46;
+}
+
+.linkedStatus code {
+  font-size: 0.7rem;
+  color: #047857;
+}
+
+.successMessage {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #ecfdf5;
+  border-radius: 8px;
+  color: #065f46;
+  font-weight: 500;
+}
+
+.successMessage span {
+  color: #10b981;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 4rem 2rem;
+}
+
+.emptyState h2 {
+  margin: 0 0 0.5rem;
+  color: #374151;
+}
+
+.emptyState p {
+  color: #666;
+}
+
+.footer {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.footer p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #888;
+}
+
+.footer a {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
+/* Additional styles for new features */
+
+.chainBadge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.requiredAction {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+
+.requiredBadge {
+  background: #ef4444;
+  color: white;
+  font-size: 0.625rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  margin-left: 0.5rem;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.childWalletOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.createWalletButton {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: #6366f1;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.createWalletButton:hover {
+  background: #4f46e5;
+}
+
+.createWalletButton:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.orDivider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.orDivider::before,
+.orDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.previewButton {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6366f1;
+  background: white;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.previewButton:hover {
+  background: #6366f1;
+  color: white;
+}
+
+.policyPreview {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+.policyPreview h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: #1a1a1a;
+}
+
+.previewSection {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.previewSection:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.previewSection h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.previewSection p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.previewSection ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.previewSection li {
+  font-size: 0.875rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.previewWarning {
+  color: #b45309 !important;
+  background: #fef3c7;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.errorText {
+  color: #ef4444;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
