@@ -33,6 +33,8 @@ export interface TransactionRequest {
   chainId: string;
   /** Transaction type */
   type?: 'transfer' | 'contractCall' | 'contractDeploy' | 'approve';
+  /** Value in USD (for USD limit checks) */
+  valueUsd?: number;
 }
 
 /**
@@ -111,6 +113,14 @@ export function validateTransaction(
     const amountCheck = checkTransactionAmount(transaction.value, policy);
     if (!amountCheck.isAllowed) {
       return amountCheck;
+    }
+  }
+
+  // Check USD spending limit
+  if (policy.usdLimit && transaction.valueUsd !== undefined) {
+    const usdCheck = checkUsdLimit(transaction.valueUsd, policy.usdLimit);
+    if (!usdCheck.isAllowed) {
+      return usdCheck;
     }
   }
 
@@ -260,6 +270,52 @@ function checkTransactionAmount(
   }
 
   return { isAllowed: true };
+}
+
+/**
+ * Checks USD spending limit
+ *
+ * @see https://docs.getpara.com/v2/concepts/permissions
+ */
+function checkUsdLimit(
+  valueUsd: number,
+  usdLimit: number
+): TransactionValidation {
+  if (valueUsd > usdLimit) {
+    return {
+      isAllowed: false,
+      rejectionReason: `Transaction value $${valueUsd.toFixed(2)} exceeds USD limit of $${usdLimit}`,
+      blockedByRule: 'USD_LIMIT_EXCEEDED',
+    };
+  }
+
+  return { isAllowed: true };
+}
+
+/**
+ * Convert ETH value to USD using a price
+ *
+ * In production, this would fetch the current ETH/USD price from an oracle.
+ * For demo purposes, we use a mock price.
+ *
+ * @param weiValue - Value in wei
+ * @param ethPriceUsd - ETH price in USD (default: mock price of $2000)
+ */
+export function weiToUsd(weiValue: string, ethPriceUsd: number = 2000): number {
+  const ethValue = Number(BigInt(weiValue)) / 1e18;
+  return ethValue * ethPriceUsd;
+}
+
+/**
+ * Convert USD to wei using a price
+ *
+ * @param usdValue - Value in USD
+ * @param ethPriceUsd - ETH price in USD (default: mock price of $2000)
+ */
+export function usdToWei(usdValue: number, ethPriceUsd: number = 2000): string {
+  const ethValue = usdValue / ethPriceUsd;
+  const weiValue = BigInt(Math.floor(ethValue * 1e18));
+  return weiValue.toString();
 }
 
 /**

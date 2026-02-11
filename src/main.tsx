@@ -76,17 +76,27 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 }
 
 /**
- * Para API Key - loaded from environment variable
+ * Para API Keys - loaded from environment variables
  * NEVER hardcode API keys in source files
+ *
+ * Supports both new naming convention and legacy fallback:
+ * - VITE_PARA_BETA_KEY / VITE_PARA_PROD_KEY (new)
+ * - VITE_PARA_API_KEY (legacy fallback)
  *
  * @see https://docs.getpara.com
  */
-const PARA_API_KEY = import.meta.env.VITE_PARA_API_KEY;
+const PARA_BETA_KEY = import.meta.env.VITE_PARA_BETA_KEY || import.meta.env.VITE_PARA_API_KEY;
+const PARA_PROD_KEY = import.meta.env.VITE_PARA_PROD_KEY;
+
+// Use beta key by default (environment switching requires app reload)
+const PARA_API_KEY = PARA_BETA_KEY;
 
 if (!PARA_API_KEY) {
-  console.error('[Para] Missing VITE_PARA_API_KEY environment variable. Please add it to your .env file.');
+  console.error('[Para] Missing Para API key. Please set VITE_PARA_BETA_KEY or VITE_PARA_API_KEY in your .env file.');
 } else {
   console.log('[Para] API key loaded, prefix:', PARA_API_KEY.split('_')[0]);
+  console.log('[Para] Beta key available:', !!PARA_BETA_KEY);
+  console.log('[Para] Prod key available:', !!PARA_PROD_KEY);
 }
 
 /**

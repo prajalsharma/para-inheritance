@@ -1,80 +1,593 @@
 /**
  * Para Allowance Wallet - Global Styles
+ * Design System: Modern Fintech (Stripe/Mercury-inspired)
+ *
+ * Design patterns applied:
+ * - Clean visual hierarchy with color contrast
+ * - Card-based layouts with subtle shadows
+ * - Status indicators with semantic colors
+ * - Progressive disclosure for complex forms
+ * - Clear feedback mechanisms
  */
 
-* {
-  box-sizing: border-box;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  :root {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+
+    color-scheme: light;
+    color: #0f172a;
+    background-color: #f8fafc;
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /* Custom properties for consistent theming */
+    --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    --gradient-success: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    --gradient-hero: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #faf5ff 100%);
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  a {
+    color: #4f46e5;
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+
+  a:hover {
+    color: #4338ca;
+    text-decoration: none;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    font-weight: 600;
+    line-height: 1.25;
+    color: #0f172a;
+    letter-spacing: -0.025em;
+  }
+
+  h1 {
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  code {
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    background: #f1f5f9;
+    padding: 0.125rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.875em;
+  }
+
+  input {
+    font-family: inherit;
+  }
+
+  /* Better focus styles for accessibility */
+  :focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+  }
 }
 
-:root {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    Roboto, 'Helvetica Neue', Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@layer components {
+  /* ============================
+   * Card Components - Fintech Style
+   * ============================ */
+  .card {
+    @apply bg-white rounded-xl border border-slate-200/60 shadow-sm;
+    background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  }
 
-  color-scheme: light;
-  color: #1a1a1a;
-  background-color: #f8f9fa;
+  .card-elevated {
+    @apply bg-white rounded-xl border border-slate-200/60;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  }
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  .card-interactive {
+    @apply card cursor-pointer transition-all duration-200;
+  }
+
+  .card-interactive:hover {
+    @apply border-slate-300;
+    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.08), 0 4px 8px -4px rgba(0, 0, 0, 0.04);
+    transform: translateY(-1px);
+  }
+
+  .card-selected {
+    @apply border-primary-500 ring-2 ring-primary-100;
+    background: linear-gradient(180deg, #eef2ff 0%, #f5f3ff 100%);
+  }
+
+  /* ============================
+   * Button Components
+   * ============================ */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
+  }
+
+  .btn-primary {
+    @apply btn text-white;
+    background: var(--gradient-primary);
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2), 0 0 0 1px rgba(79, 70, 229, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4338ca 0%, #5b5df7 100%);
+    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.3), 0 0 0 1px rgba(79, 70, 229, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
+  }
+
+  .btn-primary:focus-visible {
+    @apply ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-slate-700 border border-slate-200;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    @apply bg-slate-50 border-slate-300;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  .btn-secondary:focus-visible {
+    @apply ring-primary-500;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-600 bg-transparent;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    @apply bg-slate-100 text-slate-900;
+  }
+
+  .btn-ghost:focus-visible {
+    @apply ring-slate-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger-600 text-white hover:bg-danger-700;
+  }
+
+  .btn-danger:focus-visible {
+    @apply ring-danger-500;
+  }
+
+  .btn-success {
+    @apply btn text-white;
+    background: var(--gradient-success);
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  }
+
+  .btn-success:focus-visible {
+    @apply ring-success-500;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base rounded-xl;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .btn-icon {
+    @apply p-2.5;
+  }
+
+  /* ============================
+   * Input Components
+   * ============================ */
+  .input {
+    @apply w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white placeholder-slate-400 transition-all duration-200;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  .input:hover:not(:disabled):not(:focus) {
+    @apply border-slate-300;
+  }
+
+  .input:focus {
+    @apply outline-none border-primary-500 ring-4 ring-primary-100;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+  }
+
+  .input-error {
+    @apply input border-danger-500;
+  }
+
+  .input-error:focus {
+    @apply ring-danger-100 border-danger-500;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+  }
+
+  /* ============================
+   * Badge/Tag Components
+   * ============================ */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-100 text-primary-700;
+  }
+
+  .badge-success {
+    @apply badge bg-success-100 text-success-700;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning-100 text-warning-700;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger-100 text-danger-700;
+  }
+
+  .badge-slate {
+    @apply badge bg-slate-100 text-slate-700;
+  }
+
+  /* Tag variant - more rectangular */
+  .tag {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium;
+  }
+
+  .tag-primary {
+    @apply tag bg-primary-50 text-primary-700 border border-primary-200;
+  }
+
+  .tag-success {
+    @apply tag bg-success-50 text-success-700 border border-success-200;
+  }
+
+  .tag-warning {
+    @apply tag bg-warning-50 text-warning-700 border border-warning-200;
+  }
+
+  .tag-danger {
+    @apply tag bg-danger-50 text-danger-700 border border-danger-200;
+  }
+
+  /* ============================
+   * Status Indicators
+   * ============================ */
+  .status-dot {
+    @apply w-2 h-2 rounded-full flex-shrink-0;
+  }
+
+  .status-dot-success {
+    @apply status-dot bg-success-500;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  }
+
+  .status-dot-warning {
+    @apply status-dot bg-warning-500;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+  }
+
+  .status-dot-danger {
+    @apply status-dot bg-danger-500;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+  }
+
+  .status-dot-active {
+    @apply status-dot bg-success-500;
+    animation: pulse-success 2s infinite;
+  }
+
+  @keyframes pulse-success {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    }
+  }
+
+  /* ============================
+   * Section & Typography
+   * ============================ */
+  .section-title {
+    @apply text-lg font-semibold text-slate-900 tracking-tight;
+  }
+
+  .section-subtitle {
+    @apply text-sm text-slate-500 mt-1;
+  }
+
+  .section-header {
+    @apply flex items-center justify-between pb-4 border-b border-slate-100;
+  }
+
+  /* ============================
+   * Form Components
+   * ============================ */
+  .label {
+    @apply block text-sm font-medium text-slate-700 mb-1.5;
+  }
+
+  .hint {
+    @apply text-xs text-slate-500 mt-1.5;
+  }
+
+  .form-group {
+    @apply space-y-1.5;
+  }
+
+  /* ============================
+   * Divider
+   * ============================ */
+  .divider {
+    @apply border-t border-slate-200;
+  }
+
+  .divider-vertical {
+    @apply w-px h-6 bg-slate-200;
+  }
+
+  /* ============================
+   * Step Indicator - Fintech Wizard Style
+   * ============================ */
+  .step-indicator {
+    @apply w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300;
+  }
+
+  .step-indicator-active {
+    @apply step-indicator text-white;
+    background: var(--gradient-primary);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+
+  .step-indicator-complete {
+    @apply step-indicator text-white;
+    background: var(--gradient-success);
+  }
+
+  .step-indicator-pending {
+    @apply step-indicator bg-slate-100 text-slate-400 border-2 border-slate-200;
+  }
+
+  .step-connector {
+    @apply flex-1 h-0.5 bg-slate-200 mx-3;
+  }
+
+  .step-connector-active {
+    @apply step-connector;
+    background: linear-gradient(90deg, #4f46e5 0%, #e2e8f0 100%);
+  }
+
+  .step-connector-complete {
+    @apply step-connector bg-success-500;
+  }
+
+  /* ============================
+   * Stat Card - Dashboard Style
+   * ============================ */
+  .stat-card {
+    @apply bg-white rounded-xl border border-slate-200/60 p-5;
+    background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold text-slate-900 tracking-tight;
+  }
+
+  .stat-label {
+    @apply text-xs font-medium text-slate-500 uppercase tracking-wider mt-1;
+  }
+
+  /* ============================
+   * Progress Bar - Spending Visualization
+   * ============================ */
+  .progress-bar {
+    @apply h-2 bg-slate-100 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+  }
+
+  .progress-bar-fill-primary {
+    @apply progress-bar-fill;
+    background: var(--gradient-primary);
+  }
+
+  .progress-bar-fill-success {
+    @apply progress-bar-fill;
+    background: var(--gradient-success);
+  }
+
+  .progress-bar-fill-warning {
+    @apply progress-bar-fill bg-warning-500;
+  }
+
+  .progress-bar-fill-danger {
+    @apply progress-bar-fill bg-danger-500;
+  }
+
+  /* ============================
+   * Empty State
+   * ============================ */
+  .empty-state {
+    @apply text-center py-12;
+  }
+
+  .empty-state-icon {
+    @apply w-16 h-16 mx-auto mb-4 bg-slate-100 rounded-2xl flex items-center justify-center;
+  }
+
+  .empty-state-title {
+    @apply text-base font-semibold text-slate-900 mb-1;
+  }
+
+  .empty-state-description {
+    @apply text-sm text-slate-500;
+  }
+
+  /* ============================
+   * Tooltip (if needed)
+   * ============================ */
+  .tooltip {
+    @apply absolute z-50 px-2 py-1 text-xs font-medium text-white bg-slate-900 rounded-md shadow-lg;
+  }
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+@layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
 
-#root {
-  min-height: 100vh;
-}
+  /* Gradient backgrounds */
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
 
-a {
-  color: #6366f1;
-  text-decoration: none;
-}
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
 
-a:hover {
-  text-decoration: underline;
-}
+  /* Glass morphism effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
 
-h1, h2, h3, h4, h5, h6 {
-  margin: 0;
-  font-weight: 600;
-  line-height: 1.25;
-}
+  /* Text gradient */
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 
-p {
-  margin: 0;
-}
+  /* Custom animations */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
 
-button {
-  font-family: inherit;
-}
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-code {
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-  background: #f1f5f9;
-  padding: 0.125rem 0.25rem;
-  border-radius: 4px;
-}
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
 
-input {
-  font-family: inherit;
-}
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-/* Utility classes */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out;
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-pulse-subtle {
+    animation: pulseSubtle 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseSubtle {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  /* Smooth scrollbar */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 }

@@ -28,11 +28,16 @@ import type {
   UserRole,
   ApprovedMerchant,
   BlockedAction,
+  PolicyTemplateId,
+  ParaEnvironment,
+  ParaPolicyJSON,
 } from '../types/permissions';
 import {
   DEFAULT_BLOCKED_ACTIONS,
   DEFAULT_ALLOWED_CHAINS,
+  getPolicyTemplate,
 } from '../types/permissions';
+import { buildParaPolicy } from '../utils/paraPolicyBuilder';
 
 /**
  * Storage keys for localStorage persistence
@@ -55,6 +60,10 @@ interface PermissionContextState {
   currentPolicy: PermissionPolicy | null;
   /** Loading state */
   isLoading: boolean;
+  /** Selected Para environment */
+  selectedEnvironment: ParaEnvironment;
+  /** Selected policy template */
+  selectedTemplate: PolicyTemplateId | null;
 }
 
 /**
@@ -65,8 +74,12 @@ interface PermissionContextActions {
   setupUserProfile: (walletAddress: string, email?: string) => void;
   /** Set user role (parent or child) */
   setUserRole: (role: UserRole) => void;
+  /** Set selected Para environment */
+  setSelectedEnvironment: (env: ParaEnvironment) => void;
+  /** Set selected policy template */
+  setSelectedTemplate: (template: PolicyTemplateId | null) => void;
   /** Create a new permission policy (parent only) */
-  createPolicy: (policy: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt'>) => PermissionPolicy;
+  createPolicy: (policy: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'>) => PermissionPolicy;
   /** Update an existing policy (parent only) */
   updatePolicy: (policyId: string, updates: Partial<PermissionPolicy>) => void;
   /** Delete a policy (parent only) */
@@ -83,6 +96,8 @@ interface PermissionContextActions {
   loadChildPolicy: (parentWalletAddress: string) => void;
   /** Clear all data (logout) */
   clearUserData: () => void;
+  /** Rebuild Para Policy JSON for a policy */
+  rebuildParaPolicyJSON: (policyId: string) => void;
 }
 
 type PermissionContextType = PermissionContextState & PermissionContextActions;
@@ -104,6 +119,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const [policies, setPolicies] = useState<PermissionPolicy[]>([]);
   const [currentPolicy, setCurrentPolicy] = useState<PermissionPolicy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedEnvironment, setSelectedEnvironment] = useState<ParaEnvironment>('beta');
+  const [selectedTemplate, setSelectedTemplate] = useState<PolicyTemplateId | null>(null);
 
   // Load persisted data on mount
   useEffect(() => {
@@ -160,11 +177,26 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
    * Create a new permission policy
    */
   const createPolicy = useCallback(
-    (policyData: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt'>): PermissionPolicy => {
+    (policyData: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'>): PermissionPolicy => {
       const now = Date.now();
+
+      // Build Para Policy JSON from template
+      let paraPolicyJSON: ParaPolicyJSON | undefined;
+      try {
+        paraPolicyJSON = buildParaPolicy({
+          templateId: policyData.templateId,
+          name: policyData.name,
+          allowlist: policyData.allowlist,
+          customUsdLimit: policyData.usdLimit,
+        });
+      } catch (e) {
+        console.error('[Policy] Failed to build Para Policy JSON:', e);
+      }
+
       const newPolicy: PermissionPolicy = {
         ...policyData,
         id: generateId(),
+        paraPolicyJSON,
         createdAt: now,
         updatedAt: now,
       };
@@ -182,6 +214,38 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       return newPolicy;
     },
     [userProfile]
+  );
+
+  /**
+   * Rebuild Para Policy JSON for a policy
+   */
+  const rebuildParaPolicyJSON = useCallback(
+    (policyId: string) => {
+      setPolicies((prev) =>
+        prev.map((policy) => {
+          if (policy.id !== policyId) return policy;
+
+          let paraPolicyJSON: ParaPolicyJSON | undefined;
+          try {
+            paraPolicyJSON = buildParaPolicy({
+              templateId: policy.templateId,
+              name: policy.name,
+              allowlist: policy.allowlist,
+              customUsdLimit: policy.usdLimit,
+            });
+          } catch (e) {
+            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
+          }
+
+          return {
+            ...policy,
+            paraPolicyJSON,
+            updatedAt: Date.now(),
+          };
+        })
+      );
+    },
+    []
   );
 
   /**
@@ -210,15 +274,29 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const addMerchantToAllowlist = useCallback(
     (policyId: string, merchant: ApprovedMerchant) => {
       setPolicies((prev) =>
-        prev.map((policy) =>
-          policy.id === policyId
-            ? {
-                ...policy,
-                allowlist: [...policy.allowlist, merchant],
-                updatedAt: Date.now(),
-              }
-            : policy
-        )
+        prev.map((policy) => {
+          if (policy.id !== policyId) return policy;
+
+          const updatedPolicy = {
+            ...policy,
+            allowlist: [...policy.allowlist, merchant],
+            updatedAt: Date.now(),
+          };
+
+          // Rebuild Para Policy JSON with new allowlist
+          try {
+            updatedPolicy.paraPolicyJSON = buildParaPolicy({
+              templateId: updatedPolicy.templateId,
+              name: updatedPolicy.name,
+              allowlist: updatedPolicy.allowlist,
+              customUsdLimit: updatedPolicy.usdLimit,
+            });
+          } catch (e) {
+            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
+          }
+
+          return updatedPolicy;
+        })
       );
     },
     []
@@ -230,15 +308,29 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const removeMerchantFromAllowlist = useCallback(
     (policyId: string, merchantId: string) => {
       setPolicies((prev) =>
-        prev.map((policy) =>
-          policy.id === policyId
-            ? {
-                ...policy,
-                allowlist: policy.allowlist.filter((m) => m.id !== merchantId),
-                updatedAt: Date.now(),
-              }
-            : policy
-        )
+        prev.map((policy) => {
+          if (policy.id !== policyId) return policy;
+
+          const updatedPolicy = {
+            ...policy,
+            allowlist: policy.allowlist.filter((m) => m.id !== merchantId),
+            updatedAt: Date.now(),
+          };
+
+          // Rebuild Para Policy JSON with updated allowlist
+          try {
+            updatedPolicy.paraPolicyJSON = buildParaPolicy({
+              templateId: updatedPolicy.templateId,
+              name: updatedPolicy.name,
+              allowlist: updatedPolicy.allowlist,
+              customUsdLimit: updatedPolicy.usdLimit,
+            });
+          } catch (e) {
+            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
+          }
+
+          return updatedPolicy;
+        })
       );
     },
     []
@@ -352,8 +444,12 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     policies,
     currentPolicy: userProfile?.role === 'child' ? currentPolicy : parentCurrentPolicy,
     isLoading,
+    selectedEnvironment,
+    selectedTemplate,
     setupUserProfile,
     setUserRole,
+    setSelectedEnvironment,
+    setSelectedTemplate,
     createPolicy,
     updatePolicy,
     deletePolicy,
@@ -363,6 +459,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     linkChildToPolicy,
     loadChildPolicy,
     clearUserData,
+    rebuildParaPolicyJSON,
   };
 
   return (
@@ -390,14 +487,27 @@ export function usePermissions() {
  * - Block contract deployments
  * - Block transfers outside allowlist
  * - Block token approvals
+ *
+ * @param parentWalletAddress - Parent's wallet address
+ * @param templateId - Selected policy template
+ * @param environment - Selected Para environment
  */
-export function createDefaultPolicy(parentWalletAddress: string): Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt'> {
+export function createDefaultPolicy(
+  parentWalletAddress: string,
+  templateId: PolicyTemplateId = 'base-only',
+  environment: ParaEnvironment = 'beta'
+): Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'> {
+  const template = getPolicyTemplate(templateId);
+
   return {
-    name: 'Allowance Policy',
+    name: template?.name || 'Allowance Policy',
     parentWalletAddress,
+    templateId,
+    environment,
     allowlist: [],
     blockedActions: DEFAULT_BLOCKED_ACTIONS,
-    allowedChains: DEFAULT_ALLOWED_CHAINS,
+    allowedChains: template?.allowedChains || DEFAULT_ALLOWED_CHAINS,
+    usdLimit: template?.usdLimit,
     isActive: true,
   };
 }
