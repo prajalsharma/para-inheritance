@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build output (will be rebuilt)
+dist/
+
+# Development files
+*.log
+.DS_Store
+
+# Local env files
+.env.local
+.env.*.local

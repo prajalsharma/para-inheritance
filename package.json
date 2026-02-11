@@ -3,12 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "yarn setup-para || true"
+    "postinstall": "npx setup-para || true"
   },
   "dependencies": {
     "@getpara/react-sdk": "^2.0.0",

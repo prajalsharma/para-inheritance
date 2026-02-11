@@ -4,10 +4,110 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>para-allowance-wallet</title>
+    <title>Para Allowance Wallet</title>
+    <script>
+      // CRITICAL: Set up error handlers BEFORE any module scripts load
+      // This catches module fetch/parse errors that would otherwise cause white screen
+      (function() {
+        var errorShown = false;
+        window.__showAppError = function(phase, err) {
+          if (errorShown) return;
+          errorShown = true;
+          var msg = err ? (err.message || err.toString()) : 'Unknown error';
+          var stack = err && err.stack ? err.stack : '';
+          console.error('[' + phase + ']', err);
+          var root = document.getElementById('root');
+          if (root) {
+            root.innerHTML =
+              '<div class="app-error"><div class="app-error-card">' +
+              '<h1>Application Error</h1>' +
+              '<p>Failed during: ' + phase + '</p>' +
+              '<pre>' + msg + (stack ? '\n\n' + stack : '') + '</pre>' +
+              '<button onclick="location.reload()">Try Again</button>' +
+              '</div></div>';
+          }
+        };
+        window.onerror = function(m, u, l, c, e) { window.__showAppError('Script Error', e || new Error(m)); return false; };
+        window.onunhandledrejection = function(e) { window.__showAppError('Promise Error', e.reason); };
+        // Timeout fallback - if app hasn't loaded in 30s, show error
+        window.__appLoadTimeout = setTimeout(function() {
+          var root = document.getElementById('root');
+          if (root && root.querySelector('.app-loading')) {
+            window.__showAppError('Timeout', new Error('Application failed to initialize within 30 seconds. Check browser console for details.'));
+          }
+        }, 30000);
+      })();
+    </script>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+      #root { min-height: 100vh; }
+      /* Loading state */
+      .app-loading {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #faf5ff 100%);
+      }
+      .app-loading-content {
+        text-align: center;
+        color: #64748b;
+      }
+      .app-loading h2 { color: #334155; margin: 0 0 8px; font-size: 18px; }
+      .app-loading p { margin: 0; font-size: 14px; }
+      /* Error state */
+      .app-error {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #faf5ff 100%);
+      }
+      .app-error-card {
+        background: white;
+        padding: 32px;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        max-width: 500px;
+        text-align: center;
+      }
+      .app-error h1 { color: #dc2626; margin: 0 0 12px; font-size: 20px; }
+      .app-error p { color: #64748b; margin: 0 0 16px; font-size: 14px; }
+      .app-error pre {
+        background: #f1f5f9;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: left;
+        overflow: auto;
+        font-size: 11px;
+        color: #475569;
+        margin: 0 0 16px;
+        max-height: 200px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .app-error button {
+        padding: 10px 20px;
+        background: #6366f1;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 14px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loading">
+        <div class="app-loading-content">
+          <h2>Para Allowance Wallet</h2>
+          <p>Loading application...</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
