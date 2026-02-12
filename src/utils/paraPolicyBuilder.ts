@@ -1,41 +1,43 @@
 /**
  * Para Policy Builder
  *
- * Compiles policy templates and user customizations into Para Policy JSON.
+ * Compiles permission policies into Para Policy JSON.
  * Follows the official Para Permissions framework structure.
+ *
+ * Policies are built DYNAMICALLY based on parent selections:
+ * - Chain restriction (if enabled by parent)
+ * - USD limit (parent-defined value)
  *
  * @see https://docs.getpara.com/v2/concepts/permissions
  */
 
 import type {
-  PolicyTemplateId,
   ParaPolicyJSON,
   ParaScope,
   ParaPermission,
   ParaPolicyCondition,
-  ApprovedMerchant,
 } from '../types/permissions';
 import {
   BASE_CHAIN_ID,
-  getPolicyTemplate,
+  ALL_ALLOWED_CHAINS,
 } from '../types/permissions';
 
 /**
  * Build options for policy compilation
  */
 export interface PolicyBuildOptions {
-  /** Selected template ID */
-  templateId: PolicyTemplateId;
   /** Policy name */
   name: string;
-  /** Optional allowlist of merchants */
-  allowlist?: ApprovedMerchant[];
-  /** Custom USD limit override */
-  customUsdLimit?: number;
+  /** USD limit (parent-defined, optional) */
+  usdLimit?: number;
+  /** Allowed chains */
+  allowedChains?: string[];
+  /** Whether to restrict to Base only */
+  restrictToBase?: boolean;
 }
 
 /**
- * Compile a policy template into Para Policy JSON
+ * Compile a policy into Para Policy JSON
  *
  * This creates the structured JSON that Para uses to enforce permissions.
  * The structure follows Para's Permissions framework:
@@ -44,79 +46,75 @@ export interface PolicyBuildOptions {
  * - Permissions define specific allowed actions
  * - Conditions constrain when permissions activate
  *
+ * IMPORTANT: Conditions are built dynamically based on parent selections
+ * - Chain restriction only added if restrictToBase is true
+ * - USD limit only added if usdLimit is provided
+ *
  * @see https://docs.getpara.com/v2/concepts/permissions
  */
 export function buildParaPolicy(options: PolicyBuildOptions): ParaPolicyJSON {
-  const template = getPolicyTemplate(options.templateId);
-  if (!template) {
-    throw new Error(`Unknown policy template: ${options.templateId}`);
-  }
+  const globalConditions: ParaPolicyCondition[] = [];
 
-  const allowlist = options.allowlist || [];
-  const usdLimit = options.customUsdLimit ?? template.usdLimit;
-
-  // Global conditions that apply to ALL permissions
-  const globalConditions: ParaPolicyCondition[] = [
-    // Chain restriction - Base only
-    {
+  // Determine allowed chains based on parent selection
+  let allowedChains: string[];
+  if (options.restrictToBase) {
+    allowedChains = [BASE_CHAIN_ID];
+    // Add chain restriction condition
+    globalConditions.push({
       type: 'chain',
       operator: 'in',
-      value: template.allowedChains,
-    },
-    // Block contract deployments
-    {
-      type: 'action',
-      operator: 'notEquals',
-      value: 'deploy',
-    },
-  ];
+      value: [BASE_CHAIN_ID],
+    });
+  } else {
+    allowedChains = options.allowedChains?.length ? options.allowedChains : ALL_ALLOWED_CHAINS;
+    // Add chain restriction for allowed chains
+    globalConditions.push({
+      type: 'chain',
+      operator: 'in',
+      value: allowedChains,
+    });
+  }
 
-  // Add USD value limit if template has one
-  if (template.hasUsdLimit && usdLimit) {
+  // Add USD limit condition only if parent specified a limit
+  if (options.usdLimit !== undefined && options.usdLimit > 0) {
     globalConditions.push({
       type: 'value',
       operator: 'lessThanOrEqual',
-      value: usdLimit, // USD value
+      value: options.usdLimit,
     });
   }
 
-  // Build transfer scope with allowlist condition
-  const transferPermissions: ParaPermission[] = [];
+  // Always block contract deployments for security
+  globalConditions.push({
+    type: 'action',
+    operator: 'notEquals',
+    value: 'deploy',
+  });
 
-  // If we have an allowlist, create address conditions
-  if (allowlist.length > 0) {
-    const allowedAddresses = allowlist.map(m => m.address.toLowerCase());
-
-    transferPermissions.push({
+  // Build transfer permission
+  const transferPermissions: ParaPermission[] = [
+    {
       type: 'transfer',
-      conditions: [
-        {
-          type: 'address',
-          operator: 'in',
-          value: allowedAddresses,
-        },
-      ],
-    });
+      conditions: [],
+    },
+  ];
+
+  // Build description based on parent configuration
+  const descriptionParts: string[] = [];
+  if (options.restrictToBase) {
+    descriptionParts.push('Base only');
   } else {
-    // No allowlist - but TRANSFER_OUTSIDE_ALLOWLIST is blocked by default
-    // This means no transfers are allowed until merchants are added
-    transferPermissions.push({
-      type: 'transfer',
-      conditions: [
-        {
-          type: 'address',
-          operator: 'in',
-          value: [], // Empty allowlist - all transfers blocked
-        },
-      ],
-    });
+    descriptionParts.push('Multiple chains');
+  }
+  if (options.usdLimit !== undefined && options.usdLimit > 0) {
+    descriptionParts.push(`max $${options.usdLimit} USD per transaction`);
   }
 
   // Build scopes
   const scopes: ParaScope[] = [
     {
       name: 'Send Funds',
-      description: 'Allow sending ETH to approved addresses',
+      description: `Allow sending ETH${options.usdLimit ? ` up to $${options.usdLimit} USD` : ''}${options.restrictToBase ? ' on Base' : ''}`,
       required: true,
       permissions: transferPermissions,
     },
@@ -136,8 +134,8 @@ export function buildParaPolicy(options: PolicyBuildOptions): ParaPolicyJSON {
   return {
     version: '1.0',
     name: options.name,
-    description: template.description,
-    allowedChains: template.allowedChains,
+    description: `Child wallet policy: ${descriptionParts.join(', ')}`,
+    allowedChains,
     scopes,
     globalConditions,
   };
@@ -171,9 +169,10 @@ export function validateAgainstParaPolicy(
     if (condition.type === 'chain' && condition.operator === 'in') {
       const allowedChains = condition.value as string[];
       if (!allowedChains.includes(transaction.chainId)) {
+        const chainName = transaction.chainId === BASE_CHAIN_ID ? 'Base' : `chain ${transaction.chainId}`;
         return {
           allowed: false,
-          reason: `Chain ${transaction.chainId} is not allowed. Allowed: ${allowedChains.join(', ')}`,
+          reason: `Chain ${chainName} is not allowed by this policy.`,
         };
       }
     }
@@ -194,36 +193,8 @@ export function validateAgainstParaPolicy(
       if (transaction.valueUsd !== undefined && transaction.valueUsd > maxUsd) {
         return {
           allowed: false,
-          reason: `Transaction value $${transaction.valueUsd.toFixed(2)} exceeds limit of $${maxUsd}`,
+          reason: `Transaction value $${transaction.valueUsd.toFixed(2)} exceeds the $${maxUsd} USD limit`,
         };
-      }
-    }
-  }
-
-  // Check scope permissions for transfers
-  if (transaction.type === 'transfer' && transaction.to) {
-    const transferScope = policy.scopes.find(s => s.name === 'Send Funds');
-    if (transferScope) {
-      for (const permission of transferScope.permissions) {
-        if (permission.type === 'transfer') {
-          for (const condition of permission.conditions) {
-            if (condition.type === 'address' && condition.operator === 'in') {
-              const allowedAddresses = (condition.value as string[]).map(a => a.toLowerCase());
-              if (allowedAddresses.length > 0 && !allowedAddresses.includes(transaction.to.toLowerCase())) {
-                return {
-                  allowed: false,
-                  reason: `Recipient ${transaction.to} is not in the allowed addresses list`,
-                };
-              }
-              if (allowedAddresses.length === 0) {
-                return {
-                  allowed: false,
-                  reason: 'No merchants approved yet. Add merchants to enable transfers.',
-                };
-              }
-            }
-          }
-        }
       }
     }
   }
@@ -237,12 +208,10 @@ export function validateAgainstParaPolicy(
 export function getPolicySummary(policy: ParaPolicyJSON): {
   chain: string;
   usdLimit: number | null;
-  allowedAddresses: string[];
   blockedActions: string[];
 } {
   let usdLimit: number | null = null;
   const blockedActions: string[] = [];
-  let allowedAddresses: string[] = [];
 
   // Parse global conditions
   for (const condition of policy.globalConditions) {
@@ -254,24 +223,17 @@ export function getPolicySummary(policy: ParaPolicyJSON): {
     }
   }
 
-  // Parse transfer scope for allowlist
-  const transferScope = policy.scopes.find(s => s.name === 'Send Funds');
-  if (transferScope) {
-    for (const permission of transferScope.permissions) {
-      if (permission.type === 'transfer') {
-        for (const condition of permission.conditions) {
-          if (condition.type === 'address' && condition.operator === 'in') {
-            allowedAddresses = condition.value as string[];
-          }
-        }
-      }
-    }
+  // Determine chain description
+  let chain: string;
+  if (policy.allowedChains.length === 1 && policy.allowedChains[0] === BASE_CHAIN_ID) {
+    chain = 'Base only';
+  } else {
+    chain = `${policy.allowedChains.length} chains`;
   }
 
   return {
-    chain: policy.allowedChains[0] === BASE_CHAIN_ID ? 'Base' : policy.allowedChains.join(', '),
+    chain,
     usdLimit,
-    allowedAddresses,
     blockedActions,
   };
 }

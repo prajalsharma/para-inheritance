@@ -10,32 +10,66 @@
       // This catches module fetch/parse errors that would otherwise cause white screen
       (function() {
         var errorShown = false;
+
+        // Debug: log that this script executed
+        console.log('[Init] Error handlers setting up at:', new Date().toISOString());
+
         window.__showAppError = function(phase, err) {
           if (errorShown) return;
           errorShown = true;
           var msg = err ? (err.message || err.toString()) : 'Unknown error';
           var stack = err && err.stack ? err.stack : '';
           console.error('[' + phase + ']', err);
-          var root = document.getElementById('root');
-          if (root) {
-            root.innerHTML =
-              '<div class="app-error"><div class="app-error-card">' +
-              '<h1>Application Error</h1>' +
-              '<p>Failed during: ' + phase + '</p>' +
-              '<pre>' + msg + (stack ? '\n\n' + stack : '') + '</pre>' +
-              '<button onclick="location.reload()">Try Again</button>' +
-              '</div></div>';
+
+          // Try to show error in multiple ways to ensure visibility
+          try {
+            var root = document.getElementById('root');
+            if (root) {
+              root.innerHTML =
+                '<div class="app-error"><div class="app-error-card">' +
+                '<h1>Application Error</h1>' +
+                '<p>Failed during: ' + phase + '</p>' +
+                '<pre>' + msg + (stack ? '\n\n' + stack : '') + '</pre>' +
+                '<button onclick="location.reload()">Try Again</button>' +
+                '</div></div>';
+            }
+          } catch (displayErr) {
+            console.error('[Error Display Failed]', displayErr);
+            // Fallback: use document.body directly
+            document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;">' +
+              '<h1 style="color:red;">Application Error</h1>' +
+              '<p>' + phase + ': ' + msg + '</p>' +
+              '<button onclick="location.reload()">Reload</button></div>';
           }
         };
-        window.onerror = function(m, u, l, c, e) { window.__showAppError('Script Error', e || new Error(m)); return false; };
-        window.onunhandledrejection = function(e) { window.__showAppError('Promise Error', e.reason); };
+
+        window.onerror = function(m, u, l, c, e) {
+          console.error('[Global onerror]', { message: m, url: u, line: l, col: c, error: e });
+          window.__showAppError('Script Error', e || new Error(String(m)));
+          return false;
+        };
+
+        window.onunhandledrejection = function(e) {
+          console.error('[Global onunhandledrejection]', e.reason);
+          window.__showAppError('Promise Error', e.reason);
+        };
+
+        // Handle Vite-specific preload errors
+        window.addEventListener('vite:preloadError', function(e) {
+          console.error('[Vite Preload Error]', e);
+          window.__showAppError('Module Load Error', e.payload || new Error('Failed to preload module'));
+        });
+
         // Timeout fallback - if app hasn't loaded in 30s, show error
         window.__appLoadTimeout = setTimeout(function() {
+          console.log('[Timeout] Checking app state after 30s');
           var root = document.getElementById('root');
           if (root && root.querySelector('.app-loading')) {
             window.__showAppError('Timeout', new Error('Application failed to initialize within 30 seconds. Check browser console for details.'));
           }
         }, 30000);
+
+        console.log('[Init] Error handlers ready');
       })();
     </script>
     <style>

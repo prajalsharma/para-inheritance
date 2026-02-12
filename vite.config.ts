@@ -109,6 +109,8 @@ export default defineConfig({
     }),
     react(),
   ],
+  // Ensure WASM files are properly handled
+  assetsInclude: ['**/*.wasm'],
   define: {
     // Ensure process.env is available
     'process.env': {},
@@ -124,6 +126,8 @@ export default defineConfig({
     },
   },
   build: {
+    // Ensure compatibility with Vercel edge functions and older browsers
+    target: 'es2020',
     // Don't fail on warnings
     rollupOptions: {
       onwarn(warning, warn) {
@@ -133,6 +137,12 @@ export default defineConfig({
         if (warning.message?.includes('Use of eval')) return
         warn(warning)
       },
+    },
+  },
+  // Enable top-level await support
+  esbuild: {
+    supported: {
+      'top-level-await': true,
     },
   },
   optimizeDeps: {

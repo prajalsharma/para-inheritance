@@ -7,8 +7,7 @@
  * - Permission policies
  * - Policy CRUD operations
  *
- * In a production app, this would persist to a backend database.
- * For this demo, we use localStorage for persistence.
+ * Parent explicitly configures all permissions - no hardcoded defaults.
  *
  * @see https://docs.getpara.com/v2/react/guides/permissions
  * @see https://docs.getpara.com/v2/concepts/universal-embedded-wallets
@@ -26,16 +25,11 @@ import type {
   PermissionPolicy,
   UserProfile,
   UserRole,
-  ApprovedMerchant,
   BlockedAction,
-  PolicyTemplateId,
-  ParaEnvironment,
   ParaPolicyJSON,
 } from '../types/permissions';
 import {
   DEFAULT_BLOCKED_ACTIONS,
-  DEFAULT_ALLOWED_CHAINS,
-  getPolicyTemplate,
 } from '../types/permissions';
 import { buildParaPolicy } from '../utils/paraPolicyBuilder';
 
@@ -60,10 +54,6 @@ interface PermissionContextState {
   currentPolicy: PermissionPolicy | null;
   /** Loading state */
   isLoading: boolean;
-  /** Selected Para environment */
-  selectedEnvironment: ParaEnvironment;
-  /** Selected policy template */
-  selectedTemplate: PolicyTemplateId | null;
 }
 
 /**
@@ -74,20 +64,12 @@ interface PermissionContextActions {
   setupUserProfile: (walletAddress: string, email?: string) => void;
   /** Set user role (parent or child) */
   setUserRole: (role: UserRole) => void;
-  /** Set selected Para environment */
-  setSelectedEnvironment: (env: ParaEnvironment) => void;
-  /** Set selected policy template */
-  setSelectedTemplate: (template: PolicyTemplateId | null) => void;
   /** Create a new permission policy (parent only) */
   createPolicy: (policy: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'>) => PermissionPolicy;
   /** Update an existing policy (parent only) */
   updatePolicy: (policyId: string, updates: Partial<PermissionPolicy>) => void;
   /** Delete a policy (parent only) */
   deletePolicy: (policyId: string) => void;
-  /** Add merchant to allowlist */
-  addMerchantToAllowlist: (policyId: string, merchant: ApprovedMerchant) => void;
-  /** Remove merchant from allowlist */
-  removeMerchantFromAllowlist: (policyId: string, merchantId: string) => void;
   /** Toggle blocked action */
   toggleBlockedAction: (policyId: string, action: BlockedAction) => void;
   /** Link child to policy */
@@ -96,8 +78,6 @@ interface PermissionContextActions {
   loadChildPolicy: (parentWalletAddress: string) => void;
   /** Clear all data (logout) */
   clearUserData: () => void;
-  /** Rebuild Para Policy JSON for a policy */
-  rebuildParaPolicyJSON: (policyId: string) => void;
 }
 
 type PermissionContextType = PermissionContextState & PermissionContextActions;
@@ -119,8 +99,6 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const [policies, setPolicies] = useState<PermissionPolicy[]>([]);
   const [currentPolicy, setCurrentPolicy] = useState<PermissionPolicy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedEnvironment, setSelectedEnvironment] = useState<ParaEnvironment>('beta');
-  const [selectedTemplate, setSelectedTemplate] = useState<PolicyTemplateId | null>(null);
 
   // Load persisted data on mount
   useEffect(() => {
@@ -175,19 +153,20 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
 
   /**
    * Create a new permission policy
+   * Parent must explicitly configure all permissions
    */
   const createPolicy = useCallback(
     (policyData: Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'>): PermissionPolicy => {
       const now = Date.now();
 
-      // Build Para Policy JSON from template
+      // Build Para Policy JSON dynamically based on parent selections
       let paraPolicyJSON: ParaPolicyJSON | undefined;
       try {
         paraPolicyJSON = buildParaPolicy({
-          templateId: policyData.templateId,
           name: policyData.name,
-          allowlist: policyData.allowlist,
-          customUsdLimit: policyData.usdLimit,
+          usdLimit: policyData.usdLimit,
+          allowedChains: policyData.allowedChains,
+          restrictToBase: policyData.restrictToBase,
         });
       } catch (e) {
         console.error('[Policy] Failed to build Para Policy JSON:', e);
@@ -217,47 +196,31 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Rebuild Para Policy JSON for a policy
-   */
-  const rebuildParaPolicyJSON = useCallback(
-    (policyId: string) => {
-      setPolicies((prev) =>
-        prev.map((policy) => {
-          if (policy.id !== policyId) return policy;
-
-          let paraPolicyJSON: ParaPolicyJSON | undefined;
-          try {
-            paraPolicyJSON = buildParaPolicy({
-              templateId: policy.templateId,
-              name: policy.name,
-              allowlist: policy.allowlist,
-              customUsdLimit: policy.usdLimit,
-            });
-          } catch (e) {
-            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
-          }
-
-          return {
-            ...policy,
-            paraPolicyJSON,
-            updatedAt: Date.now(),
-          };
-        })
-      );
-    },
-    []
-  );
-
-  /**
    * Update an existing policy
    */
   const updatePolicy = useCallback((policyId: string, updates: Partial<PermissionPolicy>) => {
     setPolicies((prev) =>
-      prev.map((policy) =>
-        policy.id === policyId
-          ? { ...policy, ...updates, updatedAt: Date.now() }
-          : policy
-      )
+      prev.map((policy) => {
+        if (policy.id !== policyId) return policy;
+
+        const updatedPolicy = { ...policy, ...updates, updatedAt: Date.now() };
+
+        // Rebuild Para Policy JSON if relevant fields changed
+        if (updates.usdLimit !== undefined || updates.restrictToBase !== undefined || updates.allowedChains) {
+          try {
+            updatedPolicy.paraPolicyJSON = buildParaPolicy({
+              name: updatedPolicy.name,
+              usdLimit: updatedPolicy.usdLimit,
+              allowedChains: updatedPolicy.allowedChains,
+              restrictToBase: updatedPolicy.restrictToBase,
+            });
+          } catch (e) {
+            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
+          }
+        }
+
+        return updatedPolicy;
+      })
     );
   }, []);
 
@@ -267,74 +230,6 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const deletePolicy = useCallback((policyId: string) => {
     setPolicies((prev) => prev.filter((policy) => policy.id !== policyId));
   }, []);
-
-  /**
-   * Add merchant to allowlist
-   */
-  const addMerchantToAllowlist = useCallback(
-    (policyId: string, merchant: ApprovedMerchant) => {
-      setPolicies((prev) =>
-        prev.map((policy) => {
-          if (policy.id !== policyId) return policy;
-
-          const updatedPolicy = {
-            ...policy,
-            allowlist: [...policy.allowlist, merchant],
-            updatedAt: Date.now(),
-          };
-
-          // Rebuild Para Policy JSON with new allowlist
-          try {
-            updatedPolicy.paraPolicyJSON = buildParaPolicy({
-              templateId: updatedPolicy.templateId,
-              name: updatedPolicy.name,
-              allowlist: updatedPolicy.allowlist,
-              customUsdLimit: updatedPolicy.usdLimit,
-            });
-          } catch (e) {
-            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
-          }
-
-          return updatedPolicy;
-        })
-      );
-    },
-    []
-  );
-
-  /**
-   * Remove merchant from allowlist
-   */
-  const removeMerchantFromAllowlist = useCallback(
-    (policyId: string, merchantId: string) => {
-      setPolicies((prev) =>
-        prev.map((policy) => {
-          if (policy.id !== policyId) return policy;
-
-          const updatedPolicy = {
-            ...policy,
-            allowlist: policy.allowlist.filter((m) => m.id !== merchantId),
-            updatedAt: Date.now(),
-          };
-
-          // Rebuild Para Policy JSON with updated allowlist
-          try {
-            updatedPolicy.paraPolicyJSON = buildParaPolicy({
-              templateId: updatedPolicy.templateId,
-              name: updatedPolicy.name,
-              allowlist: updatedPolicy.allowlist,
-              customUsdLimit: updatedPolicy.usdLimit,
-            });
-          } catch (e) {
-            console.error('[Policy] Failed to rebuild Para Policy JSON:', e);
-          }
-
-          return updatedPolicy;
-        })
-      );
-    },
-    []
-  );
 
   /**
    * Toggle blocked action
@@ -379,7 +274,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       };
       localStorage.setItem(STORAGE_KEYS.LINKED_ACCOUNTS, JSON.stringify(linkedAccounts));
 
-      // Update parent's profile with child - use updater to avoid stale closure
+      // Update parent's profile with child
       setUserProfile((prev) => {
         if (!prev) return prev;
         return {
@@ -444,22 +339,15 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     policies,
     currentPolicy: userProfile?.role === 'child' ? currentPolicy : parentCurrentPolicy,
     isLoading,
-    selectedEnvironment,
-    selectedTemplate,
     setupUserProfile,
     setUserRole,
-    setSelectedEnvironment,
-    setSelectedTemplate,
     createPolicy,
     updatePolicy,
     deletePolicy,
-    addMerchantToAllowlist,
-    removeMerchantFromAllowlist,
     toggleBlockedAction,
     linkChildToPolicy,
     loadChildPolicy,
     clearUserData,
-    rebuildParaPolicyJSON,
   };
 
   return (
@@ -481,33 +369,21 @@ export function usePermissions() {
 }
 
 /**
- * Create a default policy for new parents
- *
- * This creates a policy with sensible security defaults:
- * - Block contract deployments
- * - Block transfers outside allowlist
- * - Block token approvals
+ * Create initial policy structure for new parents
+ * Note: This does NOT set hardcoded values - parent must configure all permissions
  *
  * @param parentWalletAddress - Parent's wallet address
- * @param templateId - Selected policy template
- * @param environment - Selected Para environment
  */
-export function createDefaultPolicy(
-  parentWalletAddress: string,
-  templateId: PolicyTemplateId = 'base-only',
-  environment: ParaEnvironment = 'beta'
+export function createInitialPolicyStructure(
+  parentWalletAddress: string
 ): Omit<PermissionPolicy, 'id' | 'createdAt' | 'updatedAt' | 'paraPolicyJSON'> {
-  const template = getPolicyTemplate(templateId);
-
   return {
-    name: template?.name || 'Allowance Policy',
+    name: 'Child Allowance Policy',
     parentWalletAddress,
-    templateId,
-    environment,
-    allowlist: [],
     blockedActions: DEFAULT_BLOCKED_ACTIONS,
-    allowedChains: template?.allowedChains || DEFAULT_ALLOWED_CHAINS,
-    usdLimit: template?.usdLimit,
+    allowedChains: [], // Parent must configure
+    restrictToBase: false, // Parent must explicitly enable
+    usdLimit: undefined, // Parent must set
     isActive: true,
   };
 }

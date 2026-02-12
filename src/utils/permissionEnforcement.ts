@@ -4,8 +4,13 @@
  * This module provides utilities for enforcing permission policies
  * on transactions before they are signed and submitted.
  *
+ * All permission rules are PARENT-CONFIGURED:
+ * - Chain restrictions (Base only or multiple chains)
+ * - USD spending limits (optional, parent-defined amount)
+ * - Blocked actions (contract deploy, token approvals, etc.)
+ *
  * Para's permission system works by:
- * 1. Defining policies with allowlists and blocked actions
+ * 1. Defining policies with chain restrictions and blocked actions
  * 2. Checking transactions against these policies before signing
  * 3. Rejecting transactions that violate policy rules
  *
@@ -50,7 +55,7 @@ export interface TransactionRequest {
  * @example
  * ```tsx
  * const validation = validateTransaction(
- *   { to: '0x...', value: '1000000000000000000', chainId: '1' },
+ *   { to: '0x...', value: '1000000000000000000', chainId: '8453', valueUsd: 5 },
  *   childPolicy
  * );
  *
@@ -78,9 +83,10 @@ export function validateTransaction(
 
   // Check if chain is allowed
   if (!policy.allowedChains.includes(transaction.chainId)) {
+    const allowedChainList = policy.allowedChains.join(', ');
     return {
       isAllowed: false,
-      rejectionReason: `Chain ${transaction.chainId} is not in the allowed chains list`,
+      rejectionReason: `Chain ${transaction.chainId} is not in the allowed chains list. Allowed chains: ${allowedChainList}`,
       blockedByRule: 'CHAIN_NOT_ALLOWED',
     };
   }
@@ -94,30 +100,8 @@ export function validateTransaction(
     return blockedActionCheck;
   }
 
-  // For transfers, check allowlist
-  if (txType === 'transfer' || txType === 'contractCall') {
-    const allowlistCheck = checkAllowlist(transaction.to, policy);
-    if (!allowlistCheck.isAllowed) {
-      return allowlistCheck;
-    }
-
-    // Check merchant-specific limits
-    const merchantLimitCheck = checkMerchantLimits(transaction, policy);
-    if (!merchantLimitCheck.isAllowed) {
-      return merchantLimitCheck;
-    }
-  }
-
-  // Check transaction amount limits
-  if (transaction.value) {
-    const amountCheck = checkTransactionAmount(transaction.value, policy);
-    if (!amountCheck.isAllowed) {
-      return amountCheck;
-    }
-  }
-
-  // Check USD spending limit
-  if (policy.usdLimit && transaction.valueUsd !== undefined) {
+  // Check USD spending limit (only if parent set a limit)
+  if (policy.usdLimit !== undefined && policy.usdLimit > 0 && transaction.valueUsd !== undefined) {
     const usdCheck = checkUsdLimit(transaction.valueUsd, policy.usdLimit);
     if (!usdCheck.isAllowed) {
       return usdCheck;
@@ -176,97 +160,6 @@ function checkBlockedActions(
       rejectionReason: `${txType} transactions are blocked by policy`,
       blockedByRule: action,
     };
-  }
-
-  return { isAllowed: true };
-}
-
-/**
- * Checks if the recipient is in the allowlist
- */
-function checkAllowlist(
-  toAddress: string,
-  policy: PermissionPolicy
-): TransactionValidation {
-  // If TRANSFER_OUTSIDE_ALLOWLIST is blocked, enforce allowlist
-  if (policy.blockedActions.includes('TRANSFER_OUTSIDE_ALLOWLIST')) {
-    const normalizedTo = toAddress.toLowerCase();
-    const isAllowed = policy.allowlist.some(
-      (merchant) => merchant.address.toLowerCase() === normalizedTo
-    );
-
-    if (!isAllowed) {
-      return {
-        isAllowed: false,
-        rejectionReason: `Recipient ${toAddress} is not in the approved allowlist`,
-        blockedByRule: 'TRANSFER_OUTSIDE_ALLOWLIST',
-      };
-    }
-  }
-
-  return { isAllowed: true };
-}
-
-/**
- * Checks merchant-specific transaction limits
- */
-function checkMerchantLimits(
-  transaction: TransactionRequest,
-  policy: PermissionPolicy
-): TransactionValidation {
-  const normalizedTo = transaction.to.toLowerCase();
-  const merchant = policy.allowlist.find(
-    (m) => m.address.toLowerCase() === normalizedTo
-  );
-
-  if (merchant) {
-    // Check merchant-specific max transaction amount
-    if (merchant.maxTransactionAmount && transaction.value) {
-      const txValue = BigInt(transaction.value);
-      const maxAmount = BigInt(merchant.maxTransactionAmount);
-
-      if (txValue > maxAmount) {
-        return {
-          isAllowed: false,
-          rejectionReason: `Transaction amount exceeds merchant limit for ${merchant.name}`,
-          blockedByRule: 'MERCHANT_LIMIT_EXCEEDED',
-        };
-      }
-    }
-
-    // Check merchant-specific chain restrictions
-    if (merchant.approvedChains && merchant.approvedChains.length > 0) {
-      if (!merchant.approvedChains.includes(transaction.chainId)) {
-        return {
-          isAllowed: false,
-          rejectionReason: `Merchant ${merchant.name} is not approved on chain ${transaction.chainId}`,
-          blockedByRule: 'MERCHANT_CHAIN_NOT_ALLOWED',
-        };
-      }
-    }
-  }
-
-  return { isAllowed: true };
-}
-
-/**
- * Checks global transaction amount limits
- */
-function checkTransactionAmount(
-  value: string,
-  policy: PermissionPolicy
-): TransactionValidation {
-  if (policy.maxTransactionAmount) {
-    const txValue = BigInt(value);
-    const maxAmount = BigInt(policy.maxTransactionAmount);
-
-    if (txValue > maxAmount) {
-      return {
-        isAllowed: false,
-        rejectionReason: 'Transaction amount exceeds maximum allowed limit',
-        blockedByRule: 'MAX_TRANSACTION_EXCEEDED',
-      };
-    }
   }
 
   return { isAllowed: true };
@@ -343,7 +236,6 @@ export function getBlockedActionDescription(action: BlockedAction): string {
   const descriptions: Record<BlockedAction, string> = {
     CONTRACT_DEPLOY: 'Deploying new smart contracts',
     CONTRACT_INTERACTION: 'Interacting with smart contracts',
-    TRANSFER_OUTSIDE_ALLOWLIST: 'Sending to addresses not in allowlist',
     SIGN_ARBITRARY_MESSAGE: 'Signing arbitrary messages',
     APPROVE_TOKEN_SPEND: 'Approving token spending allowances',
     NFT_TRANSFER: 'Transferring NFTs',

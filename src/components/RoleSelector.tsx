@@ -37,7 +37,7 @@ export function RoleSelector({ onRoleSelect }: RoleSelectorProps) {
             Para Allowance Wallet
           </h1>
           <p className="text-lg text-slate-600 max-w-md mx-auto">
-            Secure crypto allowances with parent-controlled permissions on Base
+            Secure crypto allowances with parent-controlled permissions
           </p>
         </div>
 
@@ -70,7 +70,7 @@ export function RoleSelector({ onRoleSelect }: RoleSelectorProps) {
             <ul className="space-y-3">
               {[
                 'Create secure embedded wallets',
-                'Set merchant allowlists',
+                'Set up child wallets on Base',
                 'Configure spending limits',
                 'Block risky transactions',
               ].map((feature, i) => (
@@ -121,9 +121,9 @@ export function RoleSelector({ onRoleSelect }: RoleSelectorProps) {
 
             <ul className="space-y-3">
               {[
-                'View approved merchants',
-                'Check spending limits',
-                'Understand your rules',
+                'Transact within parent-set rules',
+                'Stay within spending limits',
+                'View your wallet balance',
                 'Use wallet safely',
               ].map((feature, i) => (
                 <li key={i} className="flex items-center gap-3 text-sm text-slate-600">
@@ -162,7 +162,6 @@ export function RoleSelector({ onRoleSelect }: RoleSelectorProps) {
               >
                 Para
               </a>
-              {' '}on Base
             </span>
           </div>
         </div>

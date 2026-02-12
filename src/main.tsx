@@ -50,40 +50,56 @@ window.onunhandledrejection = function(event) {
   displayFatalError(event.reason, 'Unhandled Promise');
 };
 
+// Helper to update loading status in the UI
+function updateLoadingStatus(step: string) {
+  const loadingContent = document.querySelector('.app-loading-content p');
+  if (loadingContent) {
+    loadingContent.textContent = step;
+  }
+  console.log(`[Bootstrap] ${step}`);
+}
+
 // Main bootstrap function using dynamic imports
 async function bootstrap() {
   try {
-    console.log('[Bootstrap] Starting application...');
+    console.log('[Bootstrap] Starting application at:', new Date().toISOString());
+    updateLoadingStatus('Starting...');
 
     // Import React first
+    updateLoadingStatus('Loading React...');
     const React = await import('react');
     const { createRoot } = await import('react-dom/client');
-    console.log('[Bootstrap] React loaded');
+    updateLoadingStatus('React loaded');
 
     // Import React Query
+    updateLoadingStatus('Loading React Query...');
     const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-    console.log('[Bootstrap] React Query loaded');
+    updateLoadingStatus('React Query loaded');
 
     // Import Para SDK
+    updateLoadingStatus('Loading Para SDK...');
     const { ParaProvider, Environment } = await import('@getpara/react-sdk');
     await import('@getpara/react-sdk/styles.css');
-    console.log('[Bootstrap] Para SDK loaded');
+    updateLoadingStatus('Para SDK loaded');
 
     // Import app components
+    updateLoadingStatus('Loading app components...');
     const { PermissionProvider } = await import('./contexts/PermissionContext');
     const { default: App } = await import('./App');
     await import('./index.css');
-    console.log('[Bootstrap] App components loaded');
+    updateLoadingStatus('App components loaded');
 
-    // Get API key
-    const PARA_API_KEY = import.meta.env.VITE_PARA_BETA_KEY ||
-                         import.meta.env.VITE_PARA_API_KEY ||
-                         '';
+    // Get API key and environment
+    const PARA_API_KEY = import.meta.env.VITE_PARA_API_KEY || '';
+    const PARA_ENV = import.meta.env.VITE_PARA_ENV || 'development';
+
+    // Determine Para environment - 'production' uses PROD, everything else uses BETA
+    const paraEnv = PARA_ENV === 'production' ? Environment.PROD : Environment.BETA;
 
     if (!PARA_API_KEY) {
-      console.warn('[Para] No API key found. Set VITE_PARA_BETA_KEY or VITE_PARA_API_KEY');
+      console.warn('[Para] No API key found. Set VITE_PARA_API_KEY');
     } else {
-      console.log('[Para] API key loaded, prefix:', PARA_API_KEY.split('_')[0]);
+      console.log('[Para] API key loaded, env:', PARA_ENV, 'prefix:', PARA_API_KEY.split('_')[0]);
     }
 
     // Create React Query client
@@ -176,7 +192,7 @@ async function bootstrap() {
     }
 
     // Render the app
-    console.log('[Bootstrap] Rendering application...');
+    updateLoadingStatus('Rendering application...');
     createRoot(rootElement).render(
       React.createElement(React.StrictMode, null,
         React.createElement(ErrorBoundary, null,
@@ -184,7 +200,7 @@ async function bootstrap() {
             React.createElement(ParaProvider, {
               paraClientConfig: {
                 apiKey: PARA_API_KEY,
-                env: Environment.BETA,
+                env: paraEnv,
               },
               config: {
                 appName: 'Para Allowance Wallet',

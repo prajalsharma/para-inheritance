@@ -13,38 +13,6 @@
  */
 
 /**
- * Para Environment - Beta or Production
- */
-export type ParaEnvironment = 'beta' | 'production';
-
-/**
- * Policy Template ID - predefined permission policies
- */
-export type PolicyTemplateId = 'base-only' | 'safe-spend';
-
-/**
- * Policy Template Definition
- *
- * Predefined permission templates that compile into Para Policy JSON.
- */
-export interface PolicyTemplate {
-  /** Unique template ID */
-  id: PolicyTemplateId;
-  /** Display name */
-  name: string;
-  /** Description of the policy */
-  description: string;
-  /** Whether this template has a USD spending limit */
-  hasUsdLimit: boolean;
-  /** USD spending limit (if hasUsdLimit is true) */
-  usdLimit?: number;
-  /** Allowed chain IDs */
-  allowedChains: string[];
-  /** Features list for UI display */
-  features: string[];
-}
-
-/**
  * Para Policy Condition - constraints on permissions
  * @see https://docs.getpara.com/v2/concepts/permissions
  */
@@ -104,41 +72,21 @@ export interface ParaPolicyJSON {
 }
 
 /**
- * Represents a merchant/address that is approved for transactions
- */
-export interface ApprovedMerchant {
-  /** Unique identifier for the merchant */
-  id: string;
-  /** Human-readable name of the merchant */
-  name: string;
-  /** Wallet address of the merchant */
-  address: string;
-  /** Optional description of the merchant */
-  description?: string;
-  /** Maximum single transaction amount in wei (optional) */
-  maxTransactionAmount?: string;
-  /** Chains this merchant is approved on */
-  approvedChains?: string[];
-}
-
-/**
  * Actions that can be blocked for child accounts
  */
 export type BlockedAction =
   | 'CONTRACT_DEPLOY'
   | 'CONTRACT_INTERACTION'
-  | 'TRANSFER_OUTSIDE_ALLOWLIST'
   | 'SIGN_ARBITRARY_MESSAGE'
   | 'APPROVE_TOKEN_SPEND'
   | 'NFT_TRANSFER';
 
 /**
  * Permission policy that defines what a child account can do
- * Based on Para's permission framework:
- * - Policies define the full set of actions
- * - Scopes group related actions for user consent
- * - Permissions specify exact actions
- * - Conditions constrain permissions
+ *
+ * Parent explicitly configures:
+ * - Whether to restrict to Base only (optional toggle)
+ * - Maximum USD spending limit (parent-defined value)
  *
  * @see https://docs.getpara.com/v2/concepts/permissions
  * @see https://docs.getpara.com/v2/react/guides/permissions
@@ -152,20 +100,12 @@ export interface PermissionPolicy {
   parentWalletAddress: string;
   /** Child wallet address this policy applies to */
   childWalletAddress?: string;
-  /** Selected policy template ID */
-  templateId: PolicyTemplateId;
-  /** Selected Para environment */
-  environment: ParaEnvironment;
-  /** List of approved merchants/addresses */
-  allowlist: ApprovedMerchant[];
   /** List of blocked actions */
   blockedActions: BlockedAction[];
-  /** Maximum daily spending limit in wei */
-  dailySpendingLimit?: string;
-  /** Maximum single transaction limit in wei */
-  maxTransactionAmount?: string;
-  /** USD spending limit (from template) */
+  /** USD spending limit (parent-defined, optional) */
   usdLimit?: number;
+  /** Whether to restrict to Base chain only */
+  restrictToBase: boolean;
   /** Chains the child can interact with */
   allowedChains: string[];
   /** Whether the policy is currently active */
@@ -219,7 +159,6 @@ export interface TransactionValidation {
  */
 export const DEFAULT_BLOCKED_ACTIONS: BlockedAction[] = [
   'CONTRACT_DEPLOY',
-  'TRANSFER_OUTSIDE_ALLOWLIST',
   'APPROVE_TOKEN_SPEND',
 ];
 
@@ -230,54 +169,34 @@ export const DEFAULT_BLOCKED_ACTIONS: BlockedAction[] = [
 export const BASE_CHAIN_ID = '8453';
 
 /**
- * Default allowed chains - fixed to Base only for allowance wallet
+ * All allowed chains when not restricted to Base
  * @see https://docs.getpara.com/v2/react/guides/permissions
  */
-export const DEFAULT_ALLOWED_CHAINS = [
-  BASE_CHAIN_ID,   // Base mainnet only
+export const ALL_ALLOWED_CHAINS = [
+  '8453',   // Base
+  '1',      // Ethereum
+  '137',    // Polygon
+  '42161',  // Arbitrum
+  '10',     // Optimism
 ];
 
 /**
- * Predefined Policy Templates
- *
- * These templates define the base permission configurations.
- * Parents select one of these, then optionally add merchants.
- *
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * Base-only chain restriction
  */
-export const POLICY_TEMPLATES: PolicyTemplate[] = [
-  {
-    id: 'base-only',
-    name: 'Base Only',
-    description: 'Restricted to Base chain only. No spending limits.',
-    hasUsdLimit: false,
-    allowedChains: [BASE_CHAIN_ID],
-    features: [
-      'Restricted to Base network',
-      'No contract deployments',
-      'Allowlist-only transfers',
-      'No spending limit',
-    ],
-  },
-  {
-    id: 'safe-spend',
-    name: 'Safe Spend',
-    description: 'Restricted to Base chain with a $15 USD transaction limit.',
-    hasUsdLimit: true,
-    usdLimit: 15,
-    allowedChains: [BASE_CHAIN_ID],
-    features: [
-      'Restricted to Base network',
-      'No contract deployments',
-      'Allowlist-only transfers',
-      'Max $15 USD per transaction',
-    ],
-  },
-];
+export const BASE_ONLY_CHAINS = [BASE_CHAIN_ID];
 
 /**
- * Get policy template by ID
+ * Suggested USD limit for child transactions (parent can change)
  */
-export function getPolicyTemplate(id: PolicyTemplateId): PolicyTemplate | undefined {
-  return POLICY_TEMPLATES.find(t => t.id === id);
-}
+export const SUGGESTED_USD_LIMIT = 15;
+
+/**
+ * All supported chains
+ */
+export const SUPPORTED_CHAINS: { id: string; name: string }[] = [
+  { id: '8453', name: 'Base' },
+  { id: '1', name: 'Ethereum Mainnet' },
+  { id: '137', name: 'Polygon' },
+  { id: '42161', name: 'Arbitrum One' },
+  { id: '10', name: 'Optimism' },
+];

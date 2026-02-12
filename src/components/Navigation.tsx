@@ -14,14 +14,12 @@ interface NavigationProps {
 
 export function Navigation({ onLogout }: NavigationProps) {
   const { email, wallets, logout } = useParaAuth();
-  const { userProfile, currentPolicy } = usePermissions();
+  const { userProfile } = usePermissions();
 
   const handleLogout = () => {
     logout();
     onLogout();
   };
-
-  const environment = currentPolicy?.environment || 'beta';
 
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
@@ -39,13 +37,10 @@ export function Navigation({ onLogout }: NavigationProps) {
                 <h1 className="text-base font-semibold text-slate-900">Allowance Wallet</h1>
                 <div className="flex items-center gap-2">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                    environment === 'beta'
-                      ? 'bg-warning-100 text-warning-700'
-                      : 'bg-success-100 text-success-700'
+                    userProfile?.role === 'parent'
+                      ? 'bg-primary-100 text-primary-700'
+                      : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {environment}
-                  </span>
-                  <span className="text-xs text-slate-500">
                     {userProfile?.role === 'parent' ? 'Parent' : 'Child'}
                   </span>
                 </div>
