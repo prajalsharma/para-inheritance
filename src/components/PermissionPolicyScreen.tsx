@@ -21,21 +21,6 @@ import { BASE_CHAIN_ID, SUPPORTED_CHAINS, SUGGESTED_USD_LIMIT } from '../types/p
 import { getBlockedActionDescription } from '../utils/permissionEnforcement';
 import { formatPolicyForDisplay } from '../utils/paraPolicyBuilder';
 
-/**
- * Generate a deterministic child wallet address from the parent address.
- */
-function generateChildAddress(parentAddress: string): string {
-  let hash = 0;
-  const input = parentAddress + ':child:' + Date.now();
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  const hex = Math.abs(hash).toString(16).padStart(40, 'a').slice(0, 40);
-  return '0x' + hex;
-}
-
 const ALL_BLOCKED_ACTIONS: BlockedAction[] = [
   'CONTRACT_DEPLOY',
   'CONTRACT_INTERACTION',
@@ -54,7 +39,7 @@ export function PermissionPolicyScreen() {
     toggleBlockedAction,
     linkChildToPolicy,
   } = usePermissions();
-  const { createWallet, wallets } = useParaAuth();
+  const { createWallet } = useParaAuth();
 
   const [showPolicyPreview, setShowPolicyPreview] = useState(false);
   const [isCreatingChildWallet, setIsCreatingChildWallet] = useState(false);
@@ -88,40 +73,40 @@ export function PermissionPolicyScreen() {
     setIsCreatingChildWallet(true);
     setChildWalletStatus(null);
 
-    const TIMEOUT_MS = 8000;
-    let childAddress: string | null = null;
-
     try {
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('TIMEOUT')), TIMEOUT_MS)
-      );
+      console.log('[UI] Creating child wallet via Para SDK...');
 
-      const result = await Promise.race([
-        createWallet('EVM'),
-        timeoutPromise,
-      ]);
+      // Call the real Para SDK to create a new wallet
+      const result = await createWallet('EVM');
 
-      if (result) {
-        childAddress = result.address;
+      if (result && result.address) {
+        console.log('[UI] Para wallet created successfully:', {
+          id: result.id,
+          address: result.address,
+          type: result.type,
+        });
+
+        // Link the REAL wallet address from Para
+        linkChildToPolicy(currentPolicy.id, result.address);
+
+        setChildWalletStatus({
+          type: 'info',
+          message: 'Child wallet created successfully via Para.',
+        });
+      } else {
+        throw new Error('Para returned empty wallet result');
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : '';
-      if (msg !== 'TIMEOUT') {
-        console.log('[UI] Para SDK wallet creation failed:', msg);
-      }
-    }
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[UI] Para wallet creation failed:', errorMessage);
 
-    if (!childAddress) {
-      const parentAddr = wallets[0]?.address || currentPolicy.parentWalletAddress;
-      childAddress = generateChildAddress(parentAddr);
       setChildWalletStatus({
-        type: 'info',
-        message: 'Child wallet address generated for this policy. In production, the child would create their own wallet via Para sign-up.',
+        type: 'error',
+        message: `Failed to create wallet: ${errorMessage}. Please try again or link an existing wallet address.`,
       });
+    } finally {
+      setIsCreatingChildWallet(false);
     }
-
-    linkChildToPolicy(currentPolicy.id, childAddress);
-    setIsCreatingChildWallet(false);
   };
 
   // Determine display values from parent's configuration
