@@ -147,6 +147,26 @@ function ChildAuthPrompt({ onBack }: { onBack: () => void }) {
           Sign In with Para
         </button>
 
+        {/* Beta environment notice */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-left">
+          <div className="flex gap-3">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h4 className="font-semibold text-amber-800 mb-1">Beta Environment</h4>
+              <p className="text-sm text-amber-700">
+                Use email: <code className="bg-amber-100 px-1 rounded">yourname@test.getpara.com</code>
+              </p>
+              <p className="text-sm text-amber-700 mt-1">
+                Any OTP code works (e.g., <code className="bg-amber-100 px-1 rounded">123456</code>)
+              </p>
+            </div>
+          </div>
+        </div>
+
         <button
           onClick={onBack}
           className="text-sm text-slate-500 hover:text-slate-700 font-medium"
