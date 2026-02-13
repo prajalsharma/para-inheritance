@@ -114,6 +114,43 @@ Policy → Scope → Permission → Condition
 
 See: https://docs.getpara.com/v2/concepts/permissions
 
+## Troubleshooting
+
+### Debug Script
+
+Run the debug script to check your setup:
+
+```bash
+npm run debug
+```
+
+### Common Issues
+
+**1. Blank page or app won't load**
+- Check browser console (F12 → Console) for errors
+- Verify Node.js version: `node --version` (requires v20+)
+- Run `npm install` to ensure dependencies are installed
+
+**2. Login modal doesn't open**
+- Check that `VITE_PARA_API_KEY` is set correctly in `.env`
+- No spaces around `=` and no quotes: `VITE_PARA_API_KEY=pk_abc123`
+- Check browser console for Para SDK errors
+
+**3. OTP not received (Beta environment)**
+- Beta only works with test emails: `yourname@test.getpara.com`
+- Any OTP code works in Beta: `123456`
+- Real emails won't receive OTP in Beta environment
+
+**4. Environment variable not working**
+- File must be named `.env` (not `.env.local`)
+- No spaces: `VITE_PARA_API_KEY=value` not `VITE_PARA_API_KEY = value`
+- No quotes: `VITE_PARA_API_KEY=pk_abc` not `VITE_PARA_API_KEY="pk_abc"`
+- Restart dev server after changing `.env`
+
+**5. npm install fails**
+- Requires Node.js 20+: `nvm install 20 && nvm use 20`
+- Clear cache: `rm -rf node_modules package-lock.json && npm install`
+
 ## Tech Stack
 
 - React 19 + TypeScript
