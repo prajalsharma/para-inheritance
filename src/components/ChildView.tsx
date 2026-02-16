@@ -59,9 +59,6 @@ export function ChildView() {
 
   // Determine spending limit display
   const hasSpendingLimit = currentPolicy.usdLimit !== undefined && currentPolicy.usdLimit > 0;
-  const spendingLimitDisplay = hasSpendingLimit
-    ? `$${currentPolicy.usdLimit}`
-    : 'No limit';
 
   // Get chain name for display
   const getChainName = (chainId: string): string => {
@@ -82,37 +79,30 @@ export function ChildView() {
 
         {/* My Rules - Prominent Display */}
         <section className="bg-gradient-to-br from-primary-50 via-white to-primary-50 rounded-2xl border-2 border-primary-200 shadow-sm mb-6 p-6">
-          <div className="text-center mb-6">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Your Wallet Rules</h2>
-            <p className="text-slate-600">You can only:</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-primary-200 p-5 flex items-center gap-4">
-              <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">Transact on {chainDisplay}</p>
-                <p className="text-sm text-slate-500">
-                  {isBaseOnly ? 'Only Base network allowed' : 'Multiple chains allowed'}
-                </p>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-primary-200 p-5 flex items-center gap-4">
-              <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">Send up to {spendingLimitDisplay} USD</p>
-                <p className="text-sm text-slate-500">
-                  {hasSpendingLimit ? 'Per transaction limit' : 'No transaction limit set'}
-                </p>
-              </div>
-            </div>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-slate-900 mb-3">You can:</h2>
+            <ul className="space-y-3">
+              <li className="flex items-center gap-3 bg-white rounded-xl border border-primary-200 p-4">
+                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                </div>
+                <span className="font-medium text-slate-900">
+                  {isBaseOnly ? 'Transact only on Base' : `Transact on ${chainDisplay}`}
+                </span>
+              </li>
+              <li className="flex items-center gap-3 bg-white rounded-xl border border-primary-200 p-4">
+                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <span className="font-medium text-slate-900">
+                  {hasSpendingLimit ? `Send transactions up to $${currentPolicy.usdLimit} USDC` : 'Send transactions (no limit set)'}
+                </span>
+              </li>
+            </ul>
           </div>
         </section>
 

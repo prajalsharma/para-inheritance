@@ -1,48 +1,15 @@
 /**
  * Transaction Signing Endpoint - Para Enforces Permissions
  *
- * IMPORTANT: Para enforces permissions SERVER-SIDE.
- * This endpoint does NOT re-implement enforcement logic.
- *
- * How Para Permissions Work:
- * ==========================
- * From Para docs: "Every request is evaluated against these conditions
- * at runtime. Any permission that evaluates to False causes the
- * transaction to be rejected."
- *
- * Para's enforcement happens:
- * - When signTransaction is called
- * - Para checks against app permissions (Developer Portal)
- * - Para rejects if policy conditions are not met
- *
- * This Endpoint's Role:
- * ====================
- * 1. Receive transaction request from client
- * 2. Look up wallet's policy (for UX/display)
- * 3. Call Para's signing API
- * 4. Para evaluates and enforces
- * 5. Return Para's response (success or rejection)
- *
- * We RELY on Para to enforce - we don't re-implement.
+ * CRITICAL: This endpoint MUST always return JSON.
+ * - All code paths return res.status(xxx).json({...})
+ * - Top-level try-catch ensures no unhandled exceptions
+ * - Lazy imports prevent module-load-time crashes
  *
  * @see https://docs.getpara.com/v2/concepts/permissions
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getWalletPolicy } from '../lib/policyStorage';
-
-// Lazy import Para SDK to handle import failures gracefully
-let ParaModule: { Para: any; Environment: any } | null = null;
-async function getParaSDK(): Promise<{ Para: any; Environment: any } | null> {
-  if (ParaModule) return ParaModule;
-  try {
-    ParaModule = await import('@getpara/server-sdk');
-    return ParaModule;
-  } catch (error) {
-    console.error('[Server] Failed to load Para SDK:', error);
-    return null;
-  }
-}
 
 // Chain IDs for display
 const CHAIN_NAMES: Record<string, string> = {
@@ -64,47 +31,76 @@ interface SignTransactionRequest {
   transactionType: 'transfer' | 'sign' | 'contractCall' | 'deploy';
 }
 
+// Lazy import policyStorage to handle import failures gracefully
+async function getPolicyStorage() {
+  try {
+    return await import('../lib/policyStorage');
+  } catch (error) {
+    console.error('[Server] Failed to load policyStorage:', error);
+    return null;
+  }
+}
+
+// Lazy import Para SDK to handle import failures gracefully
+async function getParaSDK() {
+  try {
+    return await import('@getpara/server-sdk');
+  } catch (error) {
+    console.error('[Server] Failed to load Para SDK:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper to send JSON error response
+ */
+function sendError(
+  res: VercelResponse,
+  status: number,
+  message: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(status).json({
+    success: false,
+    error: message,
+    ...extra,
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Set CORS headers
+  // Set CORS headers FIRST
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Content-Type', 'application/json');
 
+  // Handle OPTIONS immediately
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(200).json({ success: true });
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed',
-    });
-  }
-
+  // Wrap EVERYTHING in try-catch to guarantee JSON response
   try {
-    const body = req.body as SignTransactionRequest;
-
-    // Validate required fields
-    if (!body.walletAddress) {
-      return res.status(400).json({
-        success: false,
-        error: 'Wallet address required',
-      });
+    // Method check
+    if (req.method !== 'POST') {
+      return sendError(res, 405, 'Method not allowed');
     }
 
-    if (!body.chainId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Chain ID required',
-      });
+    // Parse body safely
+    const body = (req.body || {}) as SignTransactionRequest;
+
+    // Validate required fields
+    if (!body.walletAddress || typeof body.walletAddress !== 'string') {
+      return sendError(res, 400, 'Wallet address required');
+    }
+
+    if (!body.chainId || typeof body.chainId !== 'string') {
+      return sendError(res, 400, 'Chain ID required');
     }
 
     // Validate wallet address format
     if (!body.walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid wallet address format',
-      });
+      return sendError(res, 400, 'Invalid wallet address format');
     }
 
     const chainName = CHAIN_NAMES[body.chainId] || `Chain ${body.chainId}`;
@@ -117,14 +113,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       type: body.transactionType,
     });
 
-    // Get stored policy for this wallet (for UX display)
-    const policyRecord = await getWalletPolicy(body.walletAddress);
+    // Lazy load policyStorage
+    const policyStorage = await getPolicyStorage();
+    if (!policyStorage) {
+      return sendError(res, 500, 'Policy storage module failed to load');
+    }
+
+    // Get stored policy for this wallet
+    let policyRecord;
+    try {
+      policyRecord = await policyStorage.getWalletPolicy(body.walletAddress);
+    } catch (storageError) {
+      console.error('[Server] Policy lookup error:', storageError);
+      return sendError(res, 500, 'Failed to lookup wallet policy');
+    }
 
     if (!policyRecord) {
       console.log('[Server] No policy record found for wallet');
-      return res.status(404).json({
-        success: false,
-        error: 'Wallet not found in policy store. Create wallet through parent dashboard first.',
+      return sendError(res, 404, 'Wallet not found in policy store. Create wallet through parent dashboard first.', {
         paraEnforced: true,
       });
     }
@@ -134,16 +140,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const paraEnv = process.env.VITE_PARA_ENV || 'development';
 
     if (!paraSecretKey) {
-      console.log('[Server] PARA_SECRET_KEY not configured');
-
-      // In dev mode without key, simulate Para's response based on policy
-      // This demonstrates what Para WOULD enforce
-      console.log('[Server] Simulating Para enforcement for testing...');
+      console.log('[Server] PARA_SECRET_KEY not configured - simulating Para enforcement');
 
       const policy = policyRecord.policy;
 
       // Check chain restriction (Para would enforce this)
-      const chainCondition = policy.globalConditions.find(c => c.type === 'chain');
+      const chainCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'chain');
       if (chainCondition && chainCondition.operator === 'in') {
         const allowedChains = chainCondition.value as string[];
         if (!allowedChains.includes(body.chainId)) {
@@ -151,7 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(403).json({
             success: false,
             allowed: false,
-            error: `Para Policy Rejection: Chain ${chainName} (${body.chainId}) is not allowed. Policy permits: ${allowedChains.map(c => CHAIN_NAMES[c] || c).join(', ')}`,
+            error: `Para Policy Rejection: Chain ${chainName} (${body.chainId}) is not allowed. Policy permits: ${allowedChains.map((c: string) => CHAIN_NAMES[c] || c).join(', ')}`,
             paraEnforced: true,
             rejectedBy: 'para_policy',
             condition: 'chain_restriction',
@@ -164,7 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Check USD limit (Para would enforce this)
-      const valueCondition = policy.globalConditions.find(c => c.type === 'value');
+      const valueCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'value');
       if (valueCondition && valueCondition.operator === 'lessThanOrEqual') {
         const maxUsd = valueCondition.value as number;
         if (body.valueUsd !== undefined && body.valueUsd > maxUsd) {
@@ -185,7 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Check blocked actions (Para would enforce this)
-      const actionCondition = policy.globalConditions.find(c => c.type === 'action');
+      const actionCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'action');
       if (actionCondition && actionCondition.operator === 'notEquals') {
         if (body.transactionType === actionCondition.value) {
           console.log('[Server] Para would reject: action blocked');
@@ -214,66 +216,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         note: 'In production, Para would sign this transaction.',
         policy: {
           name: policyRecord.policy.name,
-          allowedChains: policyRecord.policy.allowedChains.map(id => CHAIN_NAMES[id] || id),
+          allowedChains: policyRecord.policy.allowedChains?.map((id: string) => CHAIN_NAMES[id] || id) || [],
         },
       });
     }
 
     // Production: Call Para's signing API
-    // Para will enforce permissions and either sign or reject
     console.log('[Server] Calling Para signing API...');
 
     const sdk = await getParaSDK();
     if (!sdk) {
-      return res.status(500).json({
-        success: false,
-        error: 'Para SDK failed to load. Check server logs.',
-      });
+      return sendError(res, 500, 'Para SDK failed to load');
     }
 
-    const { Para, Environment } = sdk;
-    const env = paraEnv === 'production' ? Environment.PROD : Environment.BETA;
-    const para = new Para(env, paraSecretKey);
-    await para.ready();
+    try {
+      const { Para, Environment } = sdk;
+      const env = paraEnv === 'production' ? Environment.PROD : Environment.BETA;
+      const para = new Para(env, paraSecretKey);
+      await para.ready();
 
-    // In a full implementation:
-    // const signature = await para.signTransaction({
-    //   walletId: body.walletId,
-    //   transaction: { to: body.to, value: body.valueWei, data: body.data },
-    //   chainId: body.chainId,
-    // });
-    //
-    // Para would enforce permissions and reject if policy violated
+      // For now, return success indicating Para would process
+      // In a full implementation, call para.signTransaction here
+      return res.status(200).json({
+        success: true,
+        allowed: true,
+        paraEnforced: true,
+        message: 'Transaction validated. Para would sign this transaction.',
+        policy: {
+          name: policyRecord.policy.name,
+          allowedChains: policyRecord.policy.allowedChains?.map((id: string) => CHAIN_NAMES[id] || id) || [],
+        },
+      });
+    } catch (paraError) {
+      const msg = paraError instanceof Error ? paraError.message : 'Para signing failed';
+      console.error('[Server] Para error:', msg);
 
-    // For now, return success indicating Para would process
-    return res.status(200).json({
-      success: true,
-      allowed: true,
-      paraEnforced: true,
-      message: 'Transaction validated. Para would sign this transaction.',
-      policy: {
-        name: policyRecord.policy.name,
-        allowedChains: policyRecord.policy.allowedChains.map(id => CHAIN_NAMES[id] || id),
-      },
-    });
+      // Check if this is a Para rejection
+      if (msg.includes('policy') || msg.includes('permission') || msg.includes('rejected')) {
+        return res.status(403).json({
+          success: false,
+          error: `Para rejected: ${msg}`,
+          paraEnforced: true,
+          rejectedBy: 'para_policy',
+        });
+      }
+
+      return sendError(res, 500, `Para error: ${msg}`);
+    }
 
   } catch (error) {
+    // ULTIMATE FALLBACK - this MUST return JSON
     const msg = error instanceof Error ? error.message : 'Internal server error';
-    console.error('[Server] Error:', msg);
-
-    // Check if this is a Para rejection
-    if (msg.includes('policy') || msg.includes('permission') || msg.includes('rejected')) {
-      return res.status(403).json({
-        success: false,
-        error: `Para rejected: ${msg}`,
-        paraEnforced: true,
-        rejectedBy: 'para_policy',
-      });
-    }
+    console.error('[Server] Unhandled error:', error);
 
     return res.status(500).json({
       success: false,
       error: msg,
+      stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined,
     });
   }
 }

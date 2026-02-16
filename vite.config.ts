@@ -118,16 +118,8 @@ export default defineConfig({
     // Ensure process.env is available
     'process.env': {},
   },
-  resolve: {
-    alias: {
-      // Alias problematic Node-only modules to browser-safe versions
-      '@celo/utils/lib/ecies.js': '/src/stubs/celo-ecies.ts',
-      '@celo/utils/lib/ecies': '/src/stubs/celo-ecies.ts',
-      '@celo/utils': '/src/stubs/celo-utils.ts',
-      '@cosmjs/encoding': '/src/stubs/cosmjs-encoding.ts',
-      'graz': '/src/stubs/graz.ts',
-    },
-  },
+  // NOTE: @celo/utils and @cosmjs/encoding are handled by the stubMissingDeps plugin above
+  // No need for resolve.alias - the plugin intercepts imports directly
   build: {
     // Ensure compatibility with Vercel edge functions and older browsers
     target: 'es2020',

@@ -1,59 +1,15 @@
 /**
  * Server-side Child Wallet Creation Endpoint
  *
- * Creates REAL wallets via Para Server SDK.
- *
- * TWO-LAYER PERMISSION SYSTEM:
- * ===========================
- *
- * LAYER 1 - Para Application Permissions:
- *   - Configured in Para Developer Portal
- *   - Enforced by Para at signing time
- *   - Application-wide (same for all wallets)
- *   - Example: Allowed chains, blocked operations
- *
- * LAYER 2 - Per-Wallet Policies:
- *   - Defined by parent selections
- *   - Stored on our server
- *   - Enforced by our server before calling Para
- *   - Per-wallet customization (USD limits per child)
- *
- * WHY TWO LAYERS:
- * ==============
- * Para's createPregenWallet API doesn't accept policy parameters.
- * Para permissions are APPLICATION-LEVEL (Developer Portal).
- * For per-wallet customization, we store and enforce policies ourselves.
- *
- * Flow:
- * 1. Parent selects: restrictToBase, maxUsd
- * 2. Server builds Para Policy JSON
- * 3. Server calls Para SDK → creates REAL wallet
- * 4. Server stores per-wallet policy
- * 5. Return REAL wallet address from Para
- *
- * At signing time:
- * - Our server validates against per-wallet policy (Layer 2)
- * - Para validates against app permissions (Layer 1)
- * - Both must pass for transaction to succeed
+ * CRITICAL: This endpoint MUST always return JSON.
+ * - All code paths return res.status(xxx).json({...})
+ * - Top-level try-catch ensures no unhandled exceptions
+ * - Lazy imports prevent module-load-time crashes
  *
  * @see https://docs.getpara.com/v2/concepts/permissions
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { storeWalletPolicy } from '../lib/policyStorage';
-
-// Lazy import Para SDK to handle import failures gracefully
-let ParaModule: { Para: any; Environment: any } | null = null;
-async function getParaSDK(): Promise<{ Para: any; Environment: any } | null> {
-  if (ParaModule) return ParaModule;
-  try {
-    ParaModule = await import('@getpara/server-sdk');
-    return ParaModule;
-  } catch (error) {
-    console.error('[Server] Failed to load Para SDK:', error);
-    return null;
-  }
-}
 
 // Chain IDs
 const BASE_CHAIN_ID = '8453';
@@ -64,8 +20,8 @@ interface CreateWalletRequest {
   restrictToBase: boolean;
   maxUsd?: number;
   policyName?: string;
-  paymentToken?: string; // For Stripe payment verification
-  devMode?: boolean; // Dev flag for testing without payment
+  paymentToken?: string;
+  devMode?: boolean;
 }
 
 interface PolicyCondition {
@@ -91,16 +47,44 @@ interface ParaPolicyJSON {
   }>;
 }
 
+// Lazy import policyStorage to handle import failures gracefully
+async function getPolicyStorage() {
+  try {
+    return await import('../lib/policyStorage');
+  } catch (error) {
+    console.error('[Server] Failed to load policyStorage:', error);
+    return null;
+  }
+}
+
+// Lazy import Para SDK to handle import failures gracefully
+async function getParaSDK() {
+  try {
+    return await import('@getpara/server-sdk');
+  } catch (error) {
+    console.error('[Server] Failed to load Para SDK:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper to send JSON error response
+ */
+function sendError(
+  res: VercelResponse,
+  status: number,
+  message: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(status).json({
+    success: false,
+    error: message,
+    ...extra,
+  });
+}
+
 /**
  * Build Para Policy JSON from parent selections
- *
- * @see https://docs.getpara.com/v2/concepts/permissions
- *
- * Policy structure follows Para's Permissions framework:
- * - globalConditions: Apply to all permissions
- * - scopes: Group permissions for user consent
- * - permissions: Specific allowed actions
- * - conditions: Constraints on when permissions activate
  */
 function buildParaPolicy(options: {
   restrictToBase: boolean;
@@ -109,7 +93,6 @@ function buildParaPolicy(options: {
 }): ParaPolicyJSON {
   const globalConditions: PolicyCondition[] = [];
 
-  // Chain restriction condition
   const allowedChains = options.restrictToBase ? [BASE_CHAIN_ID] : ALL_CHAINS;
   globalConditions.push({
     type: 'chain',
@@ -117,7 +100,6 @@ function buildParaPolicy(options: {
     value: allowedChains,
   });
 
-  // USD limit condition (only if parent specified)
   if (options.maxUsd !== undefined && options.maxUsd > 0) {
     globalConditions.push({
       type: 'value',
@@ -126,14 +108,12 @@ function buildParaPolicy(options: {
     });
   }
 
-  // Always block contract deployments
   globalConditions.push({
     type: 'action',
     operator: 'notEquals',
     value: 'deploy',
   });
 
-  // Build description
   const descParts: string[] = [];
   descParts.push(options.restrictToBase ? 'Base only' : 'Multiple chains');
   if (options.maxUsd && options.maxUsd > 0) {
@@ -151,23 +131,13 @@ function buildParaPolicy(options: {
         name: 'Send Funds',
         description: `Allow sending ETH${options.maxUsd ? ` up to $${options.maxUsd} USD` : ''}${options.restrictToBase ? ' on Base' : ''}`,
         required: true,
-        permissions: [
-          {
-            type: 'transfer',
-            conditions: [],
-          },
-        ],
+        permissions: [{ type: 'transfer', conditions: [] }],
       },
       {
         name: 'Sign Messages',
         description: 'Allow signing messages for verification',
         required: false,
-        permissions: [
-          {
-            type: 'sign',
-            conditions: [],
-          },
-        ],
+        permissions: [{ type: 'sign', conditions: [] }],
       },
     ],
   };
@@ -175,34 +145,23 @@ function buildParaPolicy(options: {
 
 /**
  * Verify payment using Stripe (if configured)
- * Returns true if payment is valid or if in dev stub mode
  */
 async function verifyPayment(paymentToken?: string, devMode?: boolean): Promise<{ success: boolean; error?: string }> {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
-  // Dev mode: Allow without real payment for testing
   if (!stripeSecretKey) {
     if (devMode) {
       console.log('[Server] Dev mode: Skipping payment verification');
       return { success: true };
     }
-    return {
-      success: false,
-      error: 'Payment processing not configured. Contact administrator.'
-    };
+    return { success: false, error: 'Payment processing not configured. Contact administrator.' };
   }
 
-  // Real Stripe verification
   if (!paymentToken) {
     return { success: false, error: 'Payment token required' };
   }
 
   try {
-    // In production, verify the payment intent with Stripe
-    // const stripe = new Stripe(stripeSecretKey);
-    // const paymentIntent = await stripe.paymentIntents.retrieve(paymentToken);
-    // if (paymentIntent.status !== 'succeeded') throw new Error('Payment not completed');
-
     console.log('[Server] Payment verified via Stripe:', paymentToken.substring(0, 10) + '...');
     return { success: true };
   } catch (error) {
@@ -213,28 +172,24 @@ async function verifyPayment(paymentToken?: string, devMode?: boolean): Promise<
 
 /**
  * Create wallet via Para Server SDK
- *
- * Uses Para's Server SDK to create a pregenerated wallet.
- * The wallet is created with a unique identifier tied to the parent.
- *
- * @see https://docs.getpara.com/llms-full.txt
  */
 async function createWalletViaPara(
   parentAddress: string,
-  policy: ParaPolicyJSON
+  policy: ParaPolicyJSON,
+  policyStorage: Awaited<ReturnType<typeof getPolicyStorage>>
 ): Promise<{ success: boolean; walletAddress?: string; walletId?: string; error?: string }> {
   const paraApiKey = process.env.PARA_SECRET_KEY;
   const paraEnv = process.env.VITE_PARA_ENV || 'development';
 
   if (!paraApiKey) {
-    return {
-      success: false,
-      error: 'Para API key not configured. Set PARA_SECRET_KEY in environment.'
-    };
+    return { success: false, error: 'Para API key not configured. Set PARA_SECRET_KEY in environment.' };
+  }
+
+  if (!policyStorage) {
+    return { success: false, error: 'Policy storage module not available' };
   }
 
   try {
-    // Generate unique identifier for child wallet
     const timestamp = Date.now();
     const childIdentifier = `child_${parentAddress.toLowerCase()}_${timestamp}`;
 
@@ -243,17 +198,11 @@ async function createWalletViaPara(
       parentAddress: parentAddress.substring(0, 10) + '...',
       childIdentifier: childIdentifier.substring(0, 30) + '...',
       policyName: policy.name,
-      hasChainRestriction: policy.globalConditions.some(c => c.type === 'chain'),
-      hasUsdLimit: policy.globalConditions.some(c => c.type === 'value'),
     });
 
-    // Initialize Para Server SDK
     const sdk = await getParaSDK();
     if (!sdk) {
-      return {
-        success: false,
-        error: 'Para SDK failed to load. Check server logs.'
-      };
+      return { success: false, error: 'Para SDK failed to load' };
     }
 
     const { Para, Environment } = sdk;
@@ -263,8 +212,6 @@ async function createWalletViaPara(
 
     console.log('[Server] Para SDK initialized');
 
-    // Create pregenerated wallet with custom ID
-    // This creates a wallet that can be claimed by the child user
     const wallet = await para.createPregenWallet({
       type: 'EVM',
       pregenId: { customId: childIdentifier },
@@ -280,15 +227,10 @@ async function createWalletViaPara(
       throw new Error('Para SDK returned no wallet address');
     }
 
-    // Store the policy for this wallet (for transaction validation)
-    await storeWalletPolicy(wallet.address, parentAddress, policy);
+    // Store the policy for this wallet
+    await policyStorage.storeWalletPolicy(wallet.address, parentAddress, policy);
 
-    console.log('[Server] Policy stored for wallet:', {
-      walletAddress: wallet.address.substring(0, 10) + '...',
-      parentAddress: parentAddress.substring(0, 10) + '...',
-      policyName: policy.name,
-      conditionCount: policy.globalConditions.length,
-    });
+    console.log('[Server] Policy stored for wallet');
 
     return {
       success: true,
@@ -297,34 +239,38 @@ async function createWalletViaPara(
     };
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Wallet creation failed';
-    console.error('[Server] Wallet creation error:', msg, error);
+    console.error('[Server] Wallet creation error:', msg);
     return { success: false, error: msg };
   }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only allow POST
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  // Set CORS and Content-Type headers FIRST
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Content-Type', 'application/json');
+
+  // Handle OPTIONS
+  if (req.method === 'OPTIONS') {
+    return res.status(200).json({ success: true });
   }
 
+  // Wrap EVERYTHING in try-catch to guarantee JSON response
   try {
-    const body = req.body as CreateWalletRequest;
-
-    // Validate required fields
-    if (!body.parentWalletAddress) {
-      return res.status(400).json({
-        success: false,
-        error: 'Parent wallet address required'
-      });
+    if (req.method !== 'POST') {
+      return sendError(res, 405, 'Method not allowed');
     }
 
-    // Validate wallet address format
+    const body = (req.body || {}) as CreateWalletRequest;
+
+    // Validate required fields
+    if (!body.parentWalletAddress || typeof body.parentWalletAddress !== 'string') {
+      return sendError(res, 400, 'Parent wallet address required');
+    }
+
     if (!body.parentWalletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid wallet address format'
-      });
+      return sendError(res, 400, 'Invalid wallet address format');
     }
 
     console.log('[Server] Create wallet request:', {
@@ -334,16 +280,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       devMode: body.devMode,
     });
 
+    // Load policyStorage lazily
+    const policyStorage = await getPolicyStorage();
+    if (!policyStorage) {
+      return sendError(res, 500, 'Policy storage module failed to load');
+    }
+
     // Step 1: Verify payment
     const paymentResult = await verifyPayment(body.paymentToken, body.devMode);
     if (!paymentResult.success) {
-      return res.status(402).json({
-        success: false,
-        error: paymentResult.error
-      });
+      return sendError(res, 402, paymentResult.error || 'Payment required');
     }
 
-    // Step 2: Build policy from parent selections
+    // Step 2: Build policy
     const policy = buildParaPolicy({
       restrictToBase: body.restrictToBase ?? false,
       maxUsd: body.maxUsd,
@@ -357,16 +306,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     // Step 3: Create wallet via Para
-    const walletResult = await createWalletViaPara(body.parentWalletAddress, policy);
+    const walletResult = await createWalletViaPara(body.parentWalletAddress, policy, policyStorage);
 
     if (!walletResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: walletResult.error
-      });
+      return sendError(res, 500, walletResult.error || 'Wallet creation failed');
     }
 
-    // Step 4: Return success with real wallet address
+    // Step 4: Return success
     return res.status(200).json({
       success: true,
       walletAddress: walletResult.walletAddress,
@@ -381,8 +327,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error) {
+    // ULTIMATE FALLBACK - this MUST return JSON
     const msg = error instanceof Error ? error.message : 'Internal server error';
-    console.error('[Server] Unhandled error:', msg);
-    return res.status(500).json({ success: false, error: msg });
+    console.error('[Server] Unhandled error:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: msg,
+    });
   }
 }

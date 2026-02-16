@@ -3,10 +3,13 @@
  *
  * Modern top navigation bar with user info and logout.
  * Design: Clean, minimal fintech style header
+ *
+ * Includes wallet button in profile area for children to open Para wallet UI.
  */
 
 import { useParaAuth } from '../hooks/useParaAuth';
 import { usePermissions } from '../contexts/PermissionContext';
+import { useParaWallet } from '../hooks/useParaWallet';
 
 interface NavigationProps {
   onLogout: () => void;
@@ -15,6 +18,8 @@ interface NavigationProps {
 export function Navigation({ onLogout }: NavigationProps) {
   const { email, wallets, logout } = useParaAuth();
   const { userProfile } = usePermissions();
+  const { openWallet, canOpenWallet } = useParaWallet();
+  const isChild = userProfile?.role === 'child';
 
   const handleLogout = () => {
     logout();
@@ -61,11 +66,26 @@ export function Navigation({ onLogout }: NavigationProps) {
                   )}
                 </div>
               )}
-              <div className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
+              {/* Wallet button for children */}
+              {isChild && canOpenWallet && (
+                <button
+                  onClick={openWallet}
+                  className="w-9 h-9 bg-primary-100 hover:bg-primary-200 rounded-full flex items-center justify-center transition-colors"
+                  title="Open Wallet"
+                >
+                  <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </button>
+              )}
+              {/* Profile icon (non-clickable for now) */}
+              {(!isChild || !canOpenWallet) && (
+                <div className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+              )}
             </div>
 
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
