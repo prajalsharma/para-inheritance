@@ -31,14 +31,12 @@ interface SignTransactionRequest {
   transactionType: 'transfer' | 'sign' | 'contractCall' | 'deploy';
 }
 
-// Lazy import policyStorage to handle import failures gracefully
+// Import policyStorage directly - it's a server-only module
+import * as policyStorage from '../lib/policyStorage';
+
+// Wrapper to match existing code structure
 async function getPolicyStorage() {
-  try {
-    return await import('../lib/policyStorage');
-  } catch (error) {
-    console.error('[Server] Failed to load policyStorage:', error);
-    return null;
-  }
+  return policyStorage;
 }
 
 // Lazy import Para SDK to handle import failures gracefully
