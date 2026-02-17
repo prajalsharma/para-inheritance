@@ -17,8 +17,7 @@
 
 import { usePermissions } from '../contexts/PermissionContext';
 import { useParaAuth } from '../hooks/useParaAuth';
-import { getBlockedActionDescription } from '../utils/permissionEnforcement';
-import { BASE_CHAIN_ID, SUPPORTED_CHAINS } from '../types/permissions';
+import { BASE_CHAIN_ID } from '../types/permissions';
 import { TransactionTester } from './TransactionTester';
 
 export function ChildView() {
@@ -60,12 +59,6 @@ export function ChildView() {
   // Determine spending limit display
   const hasSpendingLimit = currentPolicy.usdLimit !== undefined && currentPolicy.usdLimit > 0;
 
-  // Get chain name for display
-  const getChainName = (chainId: string): string => {
-    const chain = SUPPORTED_CHAINS.find(c => c.id === chainId);
-    return chain?.name || `Chain ${chainId}`;
-  };
-
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -77,33 +70,19 @@ export function ChildView() {
           </p>
         </header>
 
-        {/* My Rules - Prominent Display */}
+        {/* My Rules - Simple Display (EXACT as required) */}
         <section className="bg-gradient-to-br from-primary-50 via-white to-primary-50 rounded-2xl border-2 border-primary-200 shadow-sm mb-6 p-6">
-          <div className="mb-4">
-            <h2 className="text-xl font-bold text-slate-900 mb-3">You can:</h2>
-            <ul className="space-y-3">
-              <li className="flex items-center gap-3 bg-white rounded-xl border border-primary-200 p-4">
-                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
-                </div>
-                <span className="font-medium text-slate-900">
-                  {isBaseOnly ? 'Transact only on Base' : `Transact on ${chainDisplay}`}
-                </span>
-              </li>
-              <li className="flex items-center gap-3 bg-white rounded-xl border border-primary-200 p-4">
-                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="font-medium text-slate-900">
-                  {hasSpendingLimit ? `Send transactions up to $${currentPolicy.usdLimit} USDC` : 'Send transactions (no limit set)'}
-                </span>
-              </li>
-            </ul>
-          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-4">You can:</h2>
+          <ul className="space-y-2 text-slate-900">
+            <li className="flex items-center gap-2">
+              <span className="text-primary-600">•</span>
+              <span>{isBaseOnly ? 'Transact only on Base' : `Transact on ${chainDisplay}`}</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-primary-600">•</span>
+              <span>{hasSpendingLimit ? `Send transactions up to $${currentPolicy.usdLimit} USDC` : 'Send transactions (no limit set)'}</span>
+            </li>
+          </ul>
         </section>
 
         {/* My Wallet */}
@@ -128,60 +107,6 @@ export function ChildView() {
             )}
           </div>
         </section>
-
-        {/* Allowed Networks */}
-        <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-900">Allowed Network{currentPolicy.allowedChains.length > 1 ? 's' : ''}</h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {isBaseOnly
-                ? 'You can only use the Base blockchain network.'
-                : 'You can use these blockchain networks.'}
-            </p>
-          </div>
-          <div className="px-6 py-4">
-            <div className="flex flex-wrap gap-2">
-              {currentPolicy.allowedChains.map((chainId) => (
-                <span
-                  key={chainId}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-100"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.077 13.308-5.077 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zM12.12 13.88a3 3 0 00-4.242 0 1 1 0 01-1.415-1.415 5 5 0 017.072 0 1 1 0 01-1.415 1.415zM9 16a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {getChainName(chainId)}
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* What I Cannot Do */}
-        {currentPolicy.blockedActions.length > 0 && (
-          <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-semibold text-slate-900">What I Cannot Do</h2>
-              <p className="text-sm text-slate-500 mt-0.5">These actions are blocked for safety.</p>
-            </div>
-            <div className="px-6 py-4">
-              <div className="space-y-3">
-                {currentPolicy.blockedActions.map((action) => (
-                  <div key={action} className="flex items-start gap-3 p-4 bg-danger-50 rounded-lg border border-danger-100">
-                    <div className="w-8 h-8 bg-danger-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-danger-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-medium text-danger-800">{action.replace(/_/g, ' ')}</p>
-                      <p className="text-sm text-danger-600">{getBlockedActionDescription(action)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
 
         {/* Parent Info */}
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
