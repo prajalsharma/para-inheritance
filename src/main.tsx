@@ -140,8 +140,8 @@ const paraModalConfig = {
   disableEmailLogin: false,
   disablePhoneLogin: false,
   // Debug: track modal steps
-  onModalStepChange: (step: string) => {
-    console.log('[Para Modal] Step changed to:', step);
+  onModalStepChange: (value: unknown) => {
+    console.log('[Para Modal] Step changed to:', value);
   },
   onClose: () => {
     console.log('[Para Modal] Modal closed');
