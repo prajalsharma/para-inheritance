@@ -166,10 +166,11 @@ export interface TransactionValidation {
 
 /**
  * Default blocked actions for child accounts
- * These are security defaults that prevent risky operations
+ * Per spec: block contract deployments AND smart contract calls
  */
 export const DEFAULT_BLOCKED_ACTIONS: BlockedAction[] = [
   'DEPLOY_CONTRACT',
+  'SMART_CONTRACT',
 ];
 
 /**
