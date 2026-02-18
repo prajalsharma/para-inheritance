@@ -2,84 +2,94 @@
  * Permission Types for Para Allowance Wallet
  *
  * These types define the permission policies for parent-child wallet relationships.
- * Following Para's official Permissions framework terminology:
- * - Policy: App-specific permissions contract
- * - Scope: User-facing consent grouping of actions
- * - Permission: Specific executable action
- * - Condition: Constraints on when permissions activate
+ * Following Para's official Permissions framework from the backend docs:
+ * - Policy: Defines all allowed actions needed from the Para wallet
+ * - Scope: User-facing consent checkbox grouping
+ * - Permission: Specific action with effect (ALLOW/DENY)
+ * - Condition: Constraints on when permissions apply
  *
- * @see https://docs.getpara.com/v2/concepts/permissions
- * @see https://docs.getpara.com/v2/react/guides/permissions
+ * @see Para Permissions Architecture Documentation
  */
 
 /**
  * Para Policy Condition - constraints on permissions
- * @see https://docs.getpara.com/v2/concepts/permissions
+ *
+ * Conditions use STATIC type for now, with future support for
+ * variable conditions based on past actions.
  */
 export interface ParaPolicyCondition {
-  /** Condition type */
-  type: 'chain' | 'value' | 'address' | 'action';
-  /** Operator for comparison */
-  operator: 'equals' | 'in' | 'lessThanOrEqual' | 'notEquals';
-  /** Value to compare against */
-  value: string | string[] | number;
+  /** Condition type - STATIC for now, future: variable conditions */
+  type: 'STATIC';
+  /** Resource to check: VALUE, TO_ADDRESS, ARGUMENTS[n], etc. */
+  resource: 'VALUE' | 'TO_ADDRESS' | 'FROM_ADDRESS' | 'ARGUMENTS[0]' | 'ARGUMENTS[1]' | string;
+  /** Comparator for the condition */
+  comparator: 'EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'INCLUDED_IN' | 'NOT_INCLUDED_IN';
+  /** Reference value to compare against */
+  reference: number | string | string[];
 }
 
 /**
- * Para Permission - specific executable action
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * Para Permission - specific action with effect
+ *
+ * Each permission defines whether an action is ALLOWED or DENIED,
+ * along with the chain and type of operation.
  */
 export interface ParaPermission {
-  /** Permission type */
-  type: 'transfer' | 'sign' | 'contractCall' | 'deploy';
-  /** Conditions that must be met */
+  /** Whether this permission ALLOWs or DENYs the action */
+  effect: 'ALLOW' | 'DENY';
+  /** Chain ID for this permission */
+  chainId: string;
+  /** Type of operation */
+  type: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
+  /** Smart contract function (only for SMART_CONTRACT type) */
+  smartContractFunction?: string;
+  /** Smart contract address (only for SMART_CONTRACT type) */
+  smartContractAddress?: string;
+  /** Conditions that must be met for this permission */
   conditions: ParaPolicyCondition[];
 }
 
 /**
  * Para Scope - user-facing consent grouping
- * @see https://docs.getpara.com/v2/concepts/permissions
+ *
+ * Each scope represents a checkbox the user sees when consenting.
+ * Example: "Allow dapp to sign messages and transfer eth for this account."
  */
 export interface ParaScope {
-  /** Scope name for display */
+  /** Scope name for internal reference */
   name: string;
-  /** Description shown to user */
+  /** Description shown to user in consent UI */
   description: string;
-  /** Whether this scope is required */
+  /** Whether this scope is required (user must accept) */
   required: boolean;
-  /** Permissions in this scope */
+  /** Permissions included in this scope */
   permissions: ParaPermission[];
 }
 
 /**
- * Para Policy JSON structure
- * This is the compiled policy format for Para SDK
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * Para Policy JSON structure - the complete policy definition
+ *
+ * This is the schema partners pass to Para to set up their policy.
+ * Policies are immutable - new versions create entirely new policies.
  */
 export interface ParaPolicyJSON {
-  /** Policy version */
-  version: '1.0';
-  /** Policy name */
-  name: string;
-  /** Policy description */
-  description: string;
-  /** Allowed blockchain networks */
-  allowedChains: string[];
-  /** Permission scopes */
+  /** Partner ID (the app's identifier with Para) */
+  partnerId: string;
+  /** When the policy becomes valid (timestamp, optional) */
+  validFrom?: number;
+  /** When the policy expires (timestamp, optional) */
+  validTo?: number;
+  /** Permission scopes that users consent to */
   scopes: ParaScope[];
-  /** Global conditions applied to all permissions */
-  globalConditions: ParaPolicyCondition[];
 }
 
 /**
  * Actions that can be blocked for child accounts
  */
 export type BlockedAction =
-  | 'CONTRACT_DEPLOY'
-  | 'CONTRACT_INTERACTION'
-  | 'SIGN_ARBITRARY_MESSAGE'
-  | 'APPROVE_TOKEN_SPEND'
-  | 'NFT_TRANSFER';
+  | 'DEPLOY_CONTRACT'
+  | 'SMART_CONTRACT'
+  | 'SIGN_MESSAGE';
 
 /**
  * Permission policy that defines what a child account can do
@@ -87,9 +97,6 @@ export type BlockedAction =
  * Parent explicitly configures:
  * - Whether to restrict to Base only (optional toggle)
  * - Maximum USD spending limit (parent-defined value)
- *
- * @see https://docs.getpara.com/v2/concepts/permissions
- * @see https://docs.getpara.com/v2/react/guides/permissions
  */
 export interface PermissionPolicy {
   /** Unique identifier for the policy */
@@ -158,19 +165,16 @@ export interface TransactionValidation {
  * These are security defaults that prevent risky operations
  */
 export const DEFAULT_BLOCKED_ACTIONS: BlockedAction[] = [
-  'CONTRACT_DEPLOY',
-  'APPROVE_TOKEN_SPEND',
+  'DEPLOY_CONTRACT',
 ];
 
 /**
  * Base chain ID - fixed for this allowance wallet
- * All transactions are restricted to Base network
  */
 export const BASE_CHAIN_ID = '8453';
 
 /**
  * All allowed chains when not restricted to Base
- * @see https://docs.getpara.com/v2/react/guides/permissions
  */
 export const ALL_ALLOWED_CHAINS = [
   '8453',   // Base

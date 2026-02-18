@@ -4,32 +4,18 @@
  * TODO: TEMPORARY CLIENT-SIDE ENFORCEMENT
  * ========================================
  * This client-side enforcement is a TEMPORARY measure while Para backend
- * validation issues are being resolved (JSON.parse error at line 1 column 1).
+ * validation issues are being resolved.
  *
  * In production, Para enforces permissions SERVER-SIDE at signing time.
  * Client-side checks are for UX only - they cannot be bypassed because
  * the server (Para) will reject invalid transactions regardless.
  *
- * Once Para backend is working:
- * - Remove reliance on client-side enforcement
- * - Keep client-side checks ONLY for UX (showing errors before submit)
- * - Para will be the true enforcement layer
+ * Uses Para's official Permissions architecture:
+ * - Policy with partnerId, scopes
+ * - Each permission has effect (ALLOW/DENY), chainId, type
+ * - Conditions use STATIC type with resource/comparator/reference
  *
- * This module provides utilities for enforcing permission policies
- * on transactions before they are signed and submitted.
- *
- * All permission rules are PARENT-CONFIGURED:
- * - Chain restrictions (Base only or multiple chains)
- * - USD spending limits (optional, parent-defined amount)
- * - Blocked actions (contract deploy, token approvals, etc.)
- *
- * Para's permission system works by:
- * 1. Defining policies with chain restrictions and blocked actions
- * 2. Checking transactions against these policies before signing
- * 3. Rejecting transactions that violate policy rules
- *
- * @see https://docs.getpara.com/v2/react/guides/permissions
- * @see https://docs.getpara.com/v2/concepts/universal-embedded-wallets
+ * @see Para Permissions Architecture Documentation
  */
 
 import type {
@@ -50,8 +36,8 @@ export interface TransactionRequest {
   data?: string;
   /** Chain ID */
   chainId: string;
-  /** Transaction type */
-  type?: 'transfer' | 'contractCall' | 'contractDeploy' | 'approve';
+  /** Transaction type (maps to Para permission types) */
+  type?: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
   /** Value in USD (for USD limit checks) */
   valueUsd?: number;
 }
@@ -63,28 +49,9 @@ export interface TransactionRequest {
  * Call this BEFORE any transaction attempt to block invalid actions in the UI.
  * Once Para backend is working, this becomes UX-only (Para is the true enforcer).
  *
- * This function should be called BEFORE attempting to sign any transaction
- * for a child wallet. It enforces the parent-defined permission rules.
- *
  * @param transaction - The transaction to validate
  * @param policy - The permission policy to check against
  * @returns Validation result with allowed status and rejection reason
- *
- * @example
- * ```tsx
- * const validation = validateTransaction(
- *   { to: '0x...', value: '1000000000000000000', chainId: '8453', valueUsd: 5 },
- *   childPolicy
- * );
- *
- * if (!validation.isAllowed) {
- *   alert(`Transaction blocked: ${validation.rejectionReason}`);
- *   return;
- * }
- *
- * // Proceed with Para signing
- * signTransaction({ walletId, rlpEncodedTxBase64, chainId });
- * ```
  */
 export function validateTransaction(
   transaction: TransactionRequest,
@@ -109,7 +76,7 @@ export function validateTransaction(
     };
   }
 
-  // Detect transaction type
+  // Detect transaction type (using Para permission type names)
   const txType = detectTransactionType(transaction);
 
   // Check blocked actions
@@ -131,10 +98,11 @@ export function validateTransaction(
 
 /**
  * Detects the type of transaction from its data
+ * Returns Para permission type names
  */
 function detectTransactionType(
   transaction: TransactionRequest
-): 'transfer' | 'contractCall' | 'contractDeploy' | 'approve' {
+): 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT' {
   // Explicit type provided
   if (transaction.type) {
     return transaction.type;
@@ -142,33 +110,29 @@ function detectTransactionType(
 
   // Contract deployment (no 'to' address)
   if (!transaction.to || transaction.to === '0x' || transaction.to === '') {
-    return 'contractDeploy';
-  }
-
-  // ERC20 approve signature: approve(address,uint256) = 0x095ea7b3
-  if (transaction.data?.startsWith('0x095ea7b3')) {
-    return 'approve';
+    return 'DEPLOY_CONTRACT';
   }
 
   // Has data = contract call, no data = simple transfer
   if (transaction.data && transaction.data !== '0x' && transaction.data.length > 2) {
-    return 'contractCall';
+    return 'SMART_CONTRACT';
   }
 
-  return 'transfer';
+  return 'TRANSFER';
 }
 
 /**
  * Checks if the transaction type is blocked
  */
 function checkBlockedActions(
-  txType: 'transfer' | 'contractCall' | 'contractDeploy' | 'approve',
+  txType: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT',
   blockedActions: BlockedAction[]
 ): TransactionValidation {
+  // Map transaction types to blocked action names
   const typeToAction: Record<string, BlockedAction> = {
-    contractDeploy: 'CONTRACT_DEPLOY',
-    contractCall: 'CONTRACT_INTERACTION',
-    approve: 'APPROVE_TOKEN_SPEND',
+    DEPLOY_CONTRACT: 'DEPLOY_CONTRACT',
+    SMART_CONTRACT: 'SMART_CONTRACT',
+    SIGN_MESSAGE: 'SIGN_MESSAGE',
   };
 
   const action = typeToAction[txType];
@@ -185,14 +149,12 @@ function checkBlockedActions(
 
 /**
  * Checks USD spending limit
- *
- * @see https://docs.getpara.com/v2/concepts/permissions
  */
 function checkUsdLimit(
   valueUsd: number,
   usdLimit: number
 ): TransactionValidation {
-  if (valueUsd > usdLimit) {
+  if (valueUsd >= usdLimit) {
     return {
       isAllowed: false,
       rejectionReason: `Transaction value $${valueUsd.toFixed(2)} exceeds USD limit of $${usdLimit}`,
@@ -252,11 +214,9 @@ export function parseEthToWei(eth: string): string {
  */
 export function getBlockedActionDescription(action: BlockedAction): string {
   const descriptions: Record<BlockedAction, string> = {
-    CONTRACT_DEPLOY: 'Deploying new smart contracts',
-    CONTRACT_INTERACTION: 'Interacting with smart contracts',
-    SIGN_ARBITRARY_MESSAGE: 'Signing arbitrary messages',
-    APPROVE_TOKEN_SPEND: 'Approving token spending allowances',
-    NFT_TRANSFER: 'Transferring NFTs',
+    DEPLOY_CONTRACT: 'Deploying new smart contracts',
+    SMART_CONTRACT: 'Interacting with smart contracts',
+    SIGN_MESSAGE: 'Signing arbitrary messages',
   };
 
   return descriptions[action] || action;

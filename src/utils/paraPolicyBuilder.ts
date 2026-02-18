@@ -8,7 +8,7 @@
  * - Chain restriction (if enabled by parent)
  * - USD limit (parent-defined value)
  *
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * @see Para Permissions Architecture Documentation
  */
 
 import type {
@@ -22,6 +22,9 @@ import {
   ALL_ALLOWED_CHAINS,
 } from '../types/permissions';
 
+// Partner ID for this app (would come from Para dashboard in production)
+const PARTNER_ID = process.env.VITE_PARA_PARTNER_ID || 'para-allowance-wallet';
+
 /**
  * Build options for policy compilation
  */
@@ -34,6 +37,63 @@ export interface PolicyBuildOptions {
   allowedChains?: string[];
   /** Whether to restrict to Base only */
   restrictToBase?: boolean;
+  /** Partner ID override */
+  partnerId?: string;
+  /** Valid from timestamp */
+  validFrom?: number;
+  /** Valid to timestamp */
+  validTo?: number;
+}
+
+/**
+ * Build a TRANSFER permission for a specific chain with optional value limit
+ */
+function buildTransferPermission(
+  chainId: string,
+  usdLimit?: number
+): ParaPermission {
+  const conditions: ParaPolicyCondition[] = [];
+
+  // Add USD value limit condition if specified
+  if (usdLimit !== undefined && usdLimit > 0) {
+    conditions.push({
+      type: 'STATIC',
+      resource: 'VALUE',
+      comparator: 'LESS_THAN',
+      reference: usdLimit,
+    });
+  }
+
+  return {
+    effect: 'ALLOW',
+    chainId,
+    type: 'TRANSFER',
+    conditions,
+  };
+}
+
+/**
+ * Build a SIGN_MESSAGE permission for a specific chain
+ */
+function buildSignMessagePermission(chainId: string): ParaPermission {
+  return {
+    effect: 'ALLOW',
+    chainId,
+    type: 'SIGN_MESSAGE',
+    conditions: [],
+  };
+}
+
+/**
+ * Build a DENY permission for contract deployment
+ */
+function buildDenyDeployPermission(chainId: string): ParaPermission {
+  return {
+    effect: 'DENY',
+    chainId,
+    type: 'DEPLOY_CONTRACT',
+    conditions: [],
+  };
 }
 
 /**
@@ -41,103 +101,70 @@ export interface PolicyBuildOptions {
  *
  * This creates the structured JSON that Para uses to enforce permissions.
  * The structure follows Para's Permissions framework:
- * - Global conditions apply to all permissions
- * - Scopes group related permissions for user consent
- * - Permissions define specific allowed actions
- * - Conditions constrain when permissions activate
+ * - partnerId identifies the app
+ * - scopes group related permissions for user consent
+ * - permissions define specific allowed/denied actions
+ * - conditions constrain when permissions apply
  *
- * IMPORTANT: Conditions are built dynamically based on parent selections
- * - Chain restriction only added if restrictToBase is true
- * - USD limit only added if usdLimit is provided
- *
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * @see Para Permissions Architecture Documentation
  */
 export function buildParaPolicy(options: PolicyBuildOptions): ParaPolicyJSON {
-  const globalConditions: ParaPolicyCondition[] = [];
-
   // Determine allowed chains based on parent selection
-  let allowedChains: string[];
-  if (options.restrictToBase) {
-    allowedChains = [BASE_CHAIN_ID];
-    // Add chain restriction condition
-    globalConditions.push({
-      type: 'chain',
-      operator: 'in',
-      value: [BASE_CHAIN_ID],
-    });
-  } else {
-    allowedChains = options.allowedChains?.length ? options.allowedChains : ALL_ALLOWED_CHAINS;
-    // Add chain restriction for allowed chains
-    globalConditions.push({
-      type: 'chain',
-      operator: 'in',
-      value: allowedChains,
-    });
-  }
+  const allowedChains = options.restrictToBase
+    ? [BASE_CHAIN_ID]
+    : (options.allowedChains?.length ? options.allowedChains : ALL_ALLOWED_CHAINS);
 
-  // Add USD limit condition only if parent specified a limit
-  if (options.usdLimit !== undefined && options.usdLimit > 0) {
-    globalConditions.push({
-      type: 'value',
-      operator: 'lessThanOrEqual',
-      value: options.usdLimit,
-    });
-  }
+  // Build transfer permissions for each allowed chain
+  const transferPermissions: ParaPermission[] = allowedChains.map(chainId =>
+    buildTransferPermission(chainId, options.usdLimit)
+  );
 
-  // Always block contract deployments for security
-  globalConditions.push({
-    type: 'action',
-    operator: 'notEquals',
-    value: 'deploy',
-  });
+  // Build sign message permissions for each allowed chain
+  const signMessagePermissions: ParaPermission[] = allowedChains.map(chainId =>
+    buildSignMessagePermission(chainId)
+  );
 
-  // Build transfer permission
-  const transferPermissions: ParaPermission[] = [
-    {
-      type: 'transfer',
-      conditions: [],
-    },
-  ];
+  // Build DENY permissions for contract deployment (security)
+  const denyDeployPermissions: ParaPermission[] = allowedChains.map(chainId =>
+    buildDenyDeployPermission(chainId)
+  );
 
   // Build description based on parent configuration
-  const descriptionParts: string[] = [];
-  if (options.restrictToBase) {
-    descriptionParts.push('Base only');
-  } else {
-    descriptionParts.push('Multiple chains');
-  }
-  if (options.usdLimit !== undefined && options.usdLimit > 0) {
-    descriptionParts.push(`max $${options.usdLimit} USD per transaction`);
-  }
+  const transferDescription = options.usdLimit
+    ? `Allow sending funds up to $${options.usdLimit} USD per transaction`
+    : 'Allow sending funds';
+
+  const chainDescription = options.restrictToBase
+    ? ' on Base'
+    : ` on ${allowedChains.length} chain${allowedChains.length > 1 ? 's' : ''}`;
 
   // Build scopes
   const scopes: ParaScope[] = [
     {
-      name: 'Send Funds',
-      description: `Allow sending ETH${options.usdLimit ? ` up to $${options.usdLimit} USD` : ''}${options.restrictToBase ? ' on Base' : ''}`,
+      name: 'transfer',
+      description: transferDescription + chainDescription,
       required: true,
       permissions: transferPermissions,
     },
     {
-      name: 'Sign Messages',
-      description: 'Allow signing messages for verification',
+      name: 'sign_messages',
+      description: 'Allow signing messages for verification' + chainDescription,
       required: false,
-      permissions: [
-        {
-          type: 'sign',
-          conditions: [],
-        },
-      ],
+      permissions: signMessagePermissions,
+    },
+    {
+      name: 'deny_deploy',
+      description: 'Block contract deployment for security',
+      required: true,
+      permissions: denyDeployPermissions,
     },
   ];
 
   return {
-    version: '1.0',
-    name: options.name,
-    description: `Child wallet policy: ${descriptionParts.join(', ')}`,
-    allowedChains,
+    partnerId: options.partnerId || PARTNER_ID,
+    validFrom: options.validFrom,
+    validTo: options.validTo,
     scopes,
-    globalConditions,
   };
 }
 
@@ -146,6 +173,51 @@ export function buildParaPolicy(options: PolicyBuildOptions): ParaPolicyJSON {
  */
 export function formatPolicyForDisplay(policy: ParaPolicyJSON): string {
   return JSON.stringify(policy, null, 2);
+}
+
+/**
+ * Extract allowed chains from a Para Policy
+ */
+export function getAllowedChainsFromPolicy(policy: ParaPolicyJSON): string[] {
+  const chains = new Set<string>();
+
+  for (const scope of policy.scopes) {
+    for (const permission of scope.permissions) {
+      if (permission.effect === 'ALLOW') {
+        chains.add(permission.chainId);
+      }
+    }
+  }
+
+  return Array.from(chains);
+}
+
+/**
+ * Extract USD limit from a Para Policy (returns the minimum if multiple exist)
+ */
+export function getUsdLimitFromPolicy(policy: ParaPolicyJSON): number | null {
+  let minLimit: number | null = null;
+
+  for (const scope of policy.scopes) {
+    for (const permission of scope.permissions) {
+      if (permission.type === 'TRANSFER' && permission.effect === 'ALLOW') {
+        for (const condition of permission.conditions) {
+          if (condition.resource === 'VALUE' &&
+              (condition.comparator === 'LESS_THAN' || condition.comparator === 'EQUALS')) {
+            const value = typeof condition.reference === 'number'
+              ? condition.reference
+              : parseFloat(String(condition.reference));
+
+            if (!isNaN(value) && (minLimit === null || value < minLimit)) {
+              minLimit = value;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return minLimit;
 }
 
 /**
@@ -160,46 +232,92 @@ export function validateAgainstParaPolicy(
     to?: string;
     chainId: string;
     valueUsd?: number;
-    type: 'transfer' | 'sign' | 'contractCall' | 'deploy';
+    type: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
   }
 ): { allowed: boolean; reason?: string } {
-  // Check global conditions
-  for (const condition of policy.globalConditions) {
-    // Chain check
-    if (condition.type === 'chain' && condition.operator === 'in') {
-      const allowedChains = condition.value as string[];
-      if (!allowedChains.includes(transaction.chainId)) {
-        const chainName = transaction.chainId === BASE_CHAIN_ID ? 'Base' : `chain ${transaction.chainId}`;
-        return {
-          allowed: false,
-          reason: `Chain ${chainName} is not allowed by this policy.`,
-        };
-      }
-    }
+  // Find matching permissions for this transaction type
+  for (const scope of policy.scopes) {
+    for (const permission of scope.permissions) {
+      // Check if permission matches chain and type
+      if (permission.chainId === transaction.chainId &&
+          permission.type === transaction.type) {
 
-    // Action type check (block deploys)
-    if (condition.type === 'action' && condition.operator === 'notEquals') {
-      if (transaction.type === condition.value) {
-        return {
-          allowed: false,
-          reason: `Action type "${transaction.type}" is not allowed`,
-        };
-      }
-    }
+        // If it's a DENY permission, reject
+        if (permission.effect === 'DENY') {
+          return {
+            allowed: false,
+            reason: `Action "${transaction.type}" is denied by policy`,
+          };
+        }
 
-    // USD value check
-    if (condition.type === 'value' && condition.operator === 'lessThanOrEqual') {
-      const maxUsd = condition.value as number;
-      if (transaction.valueUsd !== undefined && transaction.valueUsd > maxUsd) {
-        return {
-          allowed: false,
-          reason: `Transaction value $${transaction.valueUsd.toFixed(2)} exceeds the $${maxUsd} USD limit`,
-        };
+        // If it's an ALLOW permission, check conditions
+        if (permission.effect === 'ALLOW') {
+          for (const condition of permission.conditions) {
+            // Check VALUE condition
+            if (condition.resource === 'VALUE' && transaction.valueUsd !== undefined) {
+              const limit = typeof condition.reference === 'number'
+                ? condition.reference
+                : parseFloat(String(condition.reference));
+
+              if (condition.comparator === 'LESS_THAN' && transaction.valueUsd >= limit) {
+                return {
+                  allowed: false,
+                  reason: `Transaction value $${transaction.valueUsd.toFixed(2)} exceeds the $${limit} USD limit`,
+                };
+              }
+              if (condition.comparator === 'EQUALS' && transaction.valueUsd !== limit) {
+                return {
+                  allowed: false,
+                  reason: `Transaction value must equal $${limit} USD`,
+                };
+              }
+            }
+
+            // Check TO_ADDRESS condition
+            if (condition.resource === 'TO_ADDRESS' && transaction.to) {
+              const allowedAddresses = Array.isArray(condition.reference)
+                ? condition.reference
+                : [condition.reference];
+
+              if (condition.comparator === 'INCLUDED_IN' &&
+                  !allowedAddresses.includes(transaction.to.toLowerCase())) {
+                return {
+                  allowed: false,
+                  reason: 'Recipient address is not in the allowed list',
+                };
+              }
+              if (condition.comparator === 'NOT_INCLUDED_IN' &&
+                  allowedAddresses.includes(transaction.to.toLowerCase())) {
+                return {
+                  allowed: false,
+                  reason: 'Recipient address is blocked',
+                };
+              }
+            }
+          }
+
+          // All conditions passed
+          return { allowed: true };
+        }
       }
     }
   }
 
-  return { allowed: true };
+  // No matching permission found - check if chain is allowed at all
+  const allowedChains = getAllowedChainsFromPolicy(policy);
+  if (!allowedChains.includes(transaction.chainId)) {
+    const chainName = transaction.chainId === BASE_CHAIN_ID ? 'Base' : `chain ${transaction.chainId}`;
+    return {
+      allowed: false,
+      reason: `Chain ${chainName} is not allowed by this policy`,
+    };
+  }
+
+  // No explicit permission for this action
+  return {
+    allowed: false,
+    reason: `No permission found for action "${transaction.type}" on chain ${transaction.chainId}`,
+  };
 }
 
 /**
@@ -210,30 +328,30 @@ export function getPolicySummary(policy: ParaPolicyJSON): {
   usdLimit: number | null;
   blockedActions: string[];
 } {
-  let usdLimit: number | null = null;
+  const allowedChains = getAllowedChainsFromPolicy(policy);
+  const usdLimit = getUsdLimitFromPolicy(policy);
   const blockedActions: string[] = [];
 
-  // Parse global conditions
-  for (const condition of policy.globalConditions) {
-    if (condition.type === 'value' && condition.operator === 'lessThanOrEqual') {
-      usdLimit = condition.value as number;
-    }
-    if (condition.type === 'action' && condition.operator === 'notEquals') {
-      blockedActions.push(condition.value as string);
+  // Find denied actions
+  for (const scope of policy.scopes) {
+    for (const permission of scope.permissions) {
+      if (permission.effect === 'DENY') {
+        blockedActions.push(permission.type);
+      }
     }
   }
 
   // Determine chain description
   let chain: string;
-  if (policy.allowedChains.length === 1 && policy.allowedChains[0] === BASE_CHAIN_ID) {
+  if (allowedChains.length === 1 && allowedChains[0] === BASE_CHAIN_ID) {
     chain = 'Base only';
   } else {
-    chain = `${policy.allowedChains.length} chains`;
+    chain = `${allowedChains.length} chains`;
   }
 
   return {
     chain,
     usdLimit,
-    blockedActions,
+    blockedActions: [...new Set(blockedActions)], // Remove duplicates
   };
 }

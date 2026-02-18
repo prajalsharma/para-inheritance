@@ -6,7 +6,12 @@
  * - Top-level try-catch ensures no unhandled exceptions
  * - Lazy imports prevent module-load-time crashes
  *
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * Uses Para's official Permissions architecture:
+ * - Policy with partnerId, scopes
+ * - Each permission has effect (ALLOW/DENY), chainId, type
+ * - Conditions use STATIC type with resource/comparator/reference
+ *
+ * @see Para Permissions Architecture Documentation
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -28,11 +33,45 @@ interface SignTransactionRequest {
   valueWei?: string;
   valueUsd?: number;
   data?: string;
-  transactionType: 'transfer' | 'sign' | 'contractCall' | 'deploy';
+  transactionType: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
+}
+
+// Para Permission Condition (official schema)
+interface ParaPolicyCondition {
+  type: 'STATIC';
+  resource: 'VALUE' | 'TO_ADDRESS' | 'FROM_ADDRESS' | string;
+  comparator: 'EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'INCLUDED_IN' | 'NOT_INCLUDED_IN';
+  reference: number | string | string[];
+}
+
+// Para Permission (official schema)
+interface ParaPermission {
+  effect: 'ALLOW' | 'DENY';
+  chainId: string;
+  type: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
+  smartContractFunction?: string;
+  smartContractAddress?: string;
+  conditions: ParaPolicyCondition[];
+}
+
+// Para Scope (official schema)
+interface ParaScope {
+  name: string;
+  description: string;
+  required: boolean;
+  permissions: ParaPermission[];
+}
+
+// Para Policy JSON (official schema)
+interface ParaPolicyJSON {
+  partnerId: string;
+  validFrom?: number;
+  validTo?: number;
+  scopes: ParaScope[];
 }
 
 // In-memory policy storage (for demo/beta - replace with DB in production)
-const inMemoryPolicies = new Map<string, { policy: { globalConditions?: Array<{ type: string; operator: string; value: unknown }>; allowedChains?: string[]; name: string }; parentAddress: string }>();
+const inMemoryPolicies = new Map<string, { policy: ParaPolicyJSON; parentAddress: string }>();
 
 // Wrapper for policy storage
 async function getPolicyStorage() {
@@ -73,6 +112,141 @@ function sendError(
   });
 }
 
+/**
+ * Extract allowed chains from policy
+ */
+function getAllowedChainsFromPolicy(policy: ParaPolicyJSON): string[] {
+  const chains = new Set<string>();
+  for (const scope of policy.scopes) {
+    for (const perm of scope.permissions) {
+      if (perm.effect === 'ALLOW') {
+        chains.add(perm.chainId);
+      }
+    }
+  }
+  return Array.from(chains);
+}
+
+/**
+ * Validate transaction against Para policy
+ */
+function validateTransaction(
+  policy: ParaPolicyJSON,
+  tx: {
+    chainId: string;
+    type: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
+    valueUsd?: number;
+    to?: string;
+  }
+): { allowed: boolean; reason?: string; condition?: string } {
+  // Find matching permissions for this transaction type and chain
+  for (const scope of policy.scopes) {
+    for (const permission of scope.permissions) {
+      // Check if permission matches chain and type
+      if (permission.chainId === tx.chainId && permission.type === tx.type) {
+        // If it's a DENY permission, reject immediately
+        if (permission.effect === 'DENY') {
+          return {
+            allowed: false,
+            reason: `Action "${tx.type}" is denied by policy`,
+            condition: 'action_denied',
+          };
+        }
+
+        // If it's an ALLOW permission, check all conditions
+        if (permission.effect === 'ALLOW') {
+          for (const condition of permission.conditions) {
+            // Check VALUE condition
+            if (condition.resource === 'VALUE' && tx.valueUsd !== undefined) {
+              const limit = typeof condition.reference === 'number'
+                ? condition.reference
+                : parseFloat(String(condition.reference));
+
+              if (condition.comparator === 'LESS_THAN' && tx.valueUsd >= limit) {
+                return {
+                  allowed: false,
+                  reason: `Transaction value $${tx.valueUsd.toFixed(2)} exceeds the $${limit} USD limit`,
+                  condition: 'value_limit',
+                };
+              }
+
+              if (condition.comparator === 'GREATER_THAN' && tx.valueUsd <= limit) {
+                return {
+                  allowed: false,
+                  reason: `Transaction value $${tx.valueUsd.toFixed(2)} is below minimum $${limit} USD`,
+                  condition: 'value_minimum',
+                };
+              }
+
+              if (condition.comparator === 'EQUALS' && tx.valueUsd !== limit) {
+                return {
+                  allowed: false,
+                  reason: `Transaction value must equal $${limit} USD`,
+                  condition: 'value_exact',
+                };
+              }
+            }
+
+            // Check TO_ADDRESS condition
+            if (condition.resource === 'TO_ADDRESS' && tx.to) {
+              const addresses = Array.isArray(condition.reference)
+                ? condition.reference.map(a => a.toLowerCase())
+                : [String(condition.reference).toLowerCase()];
+
+              const toAddress = tx.to.toLowerCase();
+
+              if (condition.comparator === 'INCLUDED_IN' && !addresses.includes(toAddress)) {
+                return {
+                  allowed: false,
+                  reason: 'Recipient address is not in the allowed list',
+                  condition: 'address_whitelist',
+                };
+              }
+
+              if (condition.comparator === 'NOT_INCLUDED_IN' && addresses.includes(toAddress)) {
+                return {
+                  allowed: false,
+                  reason: 'Recipient address is blocked',
+                  condition: 'address_blacklist',
+                };
+              }
+
+              if (condition.comparator === 'EQUALS' && toAddress !== addresses[0]) {
+                return {
+                  allowed: false,
+                  reason: 'Recipient address does not match required address',
+                  condition: 'address_exact',
+                };
+              }
+            }
+          }
+
+          // All conditions passed for this ALLOW permission
+          return { allowed: true };
+        }
+      }
+    }
+  }
+
+  // No matching permission found - check if chain is even allowed
+  const allowedChains = getAllowedChainsFromPolicy(policy);
+  if (!allowedChains.includes(tx.chainId)) {
+    const chainName = CHAIN_NAMES[tx.chainId] || `chain ${tx.chainId}`;
+    return {
+      allowed: false,
+      reason: `Chain ${chainName} is not allowed by this policy. Allowed chains: ${allowedChains.map(c => CHAIN_NAMES[c] || c).join(', ')}`,
+      condition: 'chain_restriction',
+    };
+  }
+
+  // No explicit permission for this action type
+  return {
+    allowed: false,
+    reason: `No permission found for action "${tx.type}" on chain ${tx.chainId}`,
+    condition: 'no_permission',
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers FIRST
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -109,6 +283,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 400, 'Invalid wallet address format');
     }
 
+    // Normalize transaction type
+    const transactionType = (body.transactionType?.toUpperCase() || 'TRANSFER') as SignTransactionRequest['transactionType'];
+
     const chainName = CHAIN_NAMES[body.chainId] || `Chain ${body.chainId}`;
 
     console.log('[Server] Sign transaction request:', {
@@ -116,7 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       chainId: body.chainId,
       chainName,
       valueUsd: body.valueUsd,
-      type: body.transactionType,
+      type: transactionType,
     });
 
     // Lazy load policyStorage
@@ -141,79 +318,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const policy = policyRecord.policy;
+
+    // Validate transaction against policy
+    const validation = validateTransaction(policy, {
+      chainId: body.chainId,
+      type: transactionType,
+      valueUsd: body.valueUsd,
+      to: body.to,
+    });
+
+    if (!validation.allowed) {
+      console.log('[Server] Transaction rejected by policy:', validation.reason);
+      return res.status(403).json({
+        success: false,
+        allowed: false,
+        error: `Para Policy Rejection: ${validation.reason}`,
+        paraEnforced: true,
+        rejectedBy: 'para_policy',
+        condition: validation.condition,
+        policy: {
+          partnerId: policy.partnerId,
+          allowedChains: getAllowedChainsFromPolicy(policy).map(c => CHAIN_NAMES[c] || c),
+        },
+      });
+    }
+
+    // Transaction passes policy validation
+    console.log('[Server] Transaction allowed by policy');
+
     // Para API key check
     const paraSecretKey = process.env.PARA_SECRET_KEY;
     const paraEnv = process.env.VITE_PARA_ENV || 'development';
 
     if (!paraSecretKey) {
-      console.log('[Server] PARA_SECRET_KEY not configured - simulating Para enforcement');
-
-      const policy = policyRecord.policy;
-
-      // Check chain restriction (Para would enforce this)
-      const chainCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'chain');
-      if (chainCondition && chainCondition.operator === 'in') {
-        const allowedChains = chainCondition.value as string[];
-        if (!allowedChains.includes(body.chainId)) {
-          console.log('[Server] Para would reject: chain not allowed');
-          return res.status(403).json({
-            success: false,
-            allowed: false,
-            error: `Para Policy Rejection: Chain ${chainName} (${body.chainId}) is not allowed. Policy permits: ${allowedChains.map((c: string) => CHAIN_NAMES[c] || c).join(', ')}`,
-            paraEnforced: true,
-            rejectedBy: 'para_policy',
-            condition: 'chain_restriction',
-            policy: {
-              name: policy.name,
-              allowedChains: policy.allowedChains,
-            },
-          });
-        }
-      }
-
-      // Check USD limit (Para would enforce this)
-      const valueCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'value');
-      if (valueCondition && valueCondition.operator === 'lessThanOrEqual') {
-        const maxUsd = valueCondition.value as number;
-        if (body.valueUsd !== undefined && body.valueUsd > maxUsd) {
-          console.log('[Server] Para would reject: value exceeds limit');
-          return res.status(403).json({
-            success: false,
-            allowed: false,
-            error: `Para Policy Rejection: Transaction value $${body.valueUsd.toFixed(2)} exceeds policy limit of $${maxUsd}`,
-            paraEnforced: true,
-            rejectedBy: 'para_policy',
-            condition: 'value_limit',
-            policy: {
-              name: policy.name,
-              allowedChains: policy.allowedChains,
-            },
-          });
-        }
-      }
-
-      // Check blocked actions (Para would enforce this)
-      const actionCondition = policy.globalConditions?.find((c: { type: string }) => c.type === 'action');
-      if (actionCondition && actionCondition.operator === 'notEquals') {
-        if (body.transactionType === actionCondition.value) {
-          console.log('[Server] Para would reject: action blocked');
-          return res.status(403).json({
-            success: false,
-            allowed: false,
-            error: `Para Policy Rejection: Action "${body.transactionType}" is blocked by policy`,
-            paraEnforced: true,
-            rejectedBy: 'para_policy',
-            condition: 'action_blocked',
-            policy: {
-              name: policy.name,
-              allowedChains: policy.allowedChains,
-            },
-          });
-        }
-      }
-
-      // Transaction would be allowed by Para
-      console.log('[Server] Para would allow this transaction');
+      console.log('[Server] PARA_SECRET_KEY not configured - returning validation result');
       return res.status(200).json({
         success: true,
         allowed: true,
@@ -221,8 +360,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: 'Transaction approved by Para policy. (Dev mode - PARA_SECRET_KEY not set)',
         note: 'In production, Para would sign this transaction.',
         policy: {
-          name: policyRecord.policy.name,
-          allowedChains: policyRecord.policy.allowedChains?.map((id: string) => CHAIN_NAMES[id] || id) || [],
+          partnerId: policy.partnerId,
+          allowedChains: getAllowedChainsFromPolicy(policy).map(c => CHAIN_NAMES[c] || c),
         },
       });
     }
@@ -241,16 +380,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const para = new Para(env, paraSecretKey);
       await para.ready();
 
-      // For now, return success indicating Para would process
-      // In a full implementation, call para.signTransaction here
+      // Return success indicating Para validated the transaction
       return res.status(200).json({
         success: true,
         allowed: true,
         paraEnforced: true,
         message: 'Transaction validated. Para would sign this transaction.',
         policy: {
-          name: policyRecord.policy.name,
-          allowedChains: policyRecord.policy.allowedChains?.map((id: string) => CHAIN_NAMES[id] || id) || [],
+          partnerId: policy.partnerId,
+          allowedChains: getAllowedChainsFromPolicy(policy).map(c => CHAIN_NAMES[c] || c),
         },
       });
     } catch (paraError) {

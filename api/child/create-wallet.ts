@@ -6,10 +6,18 @@
  * - Top-level try-catch ensures no unhandled exceptions
  * - Lazy imports prevent module-load-time crashes
  *
- * @see https://docs.getpara.com/v2/concepts/permissions
+ * Uses Para's official Permissions architecture:
+ * - Policy with partnerId, scopes
+ * - Each permission has effect (ALLOW/DENY), chainId, type
+ * - Conditions use STATIC type with resource/comparator/reference
+ *
+ * @see Para Permissions Architecture Documentation
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+// Partner ID for this app
+const PARTNER_ID = process.env.VITE_PARA_PARTNER_ID || 'para-allowance-wallet';
 
 // Chain IDs
 const BASE_CHAIN_ID = '8453';
@@ -24,27 +32,38 @@ interface CreateWalletRequest {
   devMode?: boolean;
 }
 
-interface PolicyCondition {
-  type: 'chain' | 'value' | 'action';
-  operator: 'in' | 'lessThanOrEqual' | 'notEquals';
-  value: string | string[] | number;
+// Para Permission Condition (official schema)
+interface ParaPolicyCondition {
+  type: 'STATIC';
+  resource: 'VALUE' | 'TO_ADDRESS' | 'FROM_ADDRESS' | string;
+  comparator: 'EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'INCLUDED_IN' | 'NOT_INCLUDED_IN';
+  reference: number | string | string[];
 }
 
-interface ParaPolicyJSON {
-  version: '1.0';
+// Para Permission (official schema)
+interface ParaPermission {
+  effect: 'ALLOW' | 'DENY';
+  chainId: string;
+  type: 'TRANSFER' | 'SIGN_MESSAGE' | 'SMART_CONTRACT' | 'DEPLOY_CONTRACT';
+  smartContractFunction?: string;
+  smartContractAddress?: string;
+  conditions: ParaPolicyCondition[];
+}
+
+// Para Scope (official schema)
+interface ParaScope {
   name: string;
   description: string;
-  allowedChains: string[];
-  globalConditions: PolicyCondition[];
-  scopes: Array<{
-    name: string;
-    description: string;
-    required: boolean;
-    permissions: Array<{
-      type: string;
-      conditions: PolicyCondition[];
-    }>;
-  }>;
+  required: boolean;
+  permissions: ParaPermission[];
+}
+
+// Para Policy JSON (official schema)
+interface ParaPolicyJSON {
+  partnerId: string;
+  validFrom?: number;
+  validTo?: number;
+  scopes: ParaScope[];
 }
 
 // In-memory policy storage (for demo/beta - replace with DB in production)
@@ -94,63 +113,114 @@ function sendError(
 }
 
 /**
- * Build Para Policy JSON from parent selections
+ * Build Para Policy JSON following the official schema
  */
 function buildParaPolicy(options: {
   restrictToBase: boolean;
   maxUsd?: number;
   name?: string;
 }): ParaPolicyJSON {
-  const globalConditions: PolicyCondition[] = [];
-
   const allowedChains = options.restrictToBase ? [BASE_CHAIN_ID] : ALL_CHAINS;
-  globalConditions.push({
-    type: 'chain',
-    operator: 'in',
-    value: allowedChains,
+
+  // Build transfer permissions for each chain
+  const transferPermissions: ParaPermission[] = allowedChains.map(chainId => {
+    const conditions: ParaPolicyCondition[] = [];
+
+    // Add USD limit condition if specified
+    if (options.maxUsd !== undefined && options.maxUsd > 0) {
+      conditions.push({
+        type: 'STATIC',
+        resource: 'VALUE',
+        comparator: 'LESS_THAN',
+        reference: options.maxUsd,
+      });
+    }
+
+    return {
+      effect: 'ALLOW' as const,
+      chainId,
+      type: 'TRANSFER' as const,
+      conditions,
+    };
   });
 
-  if (options.maxUsd !== undefined && options.maxUsd > 0) {
-    globalConditions.push({
-      type: 'value',
-      operator: 'lessThanOrEqual',
-      value: options.maxUsd,
-    });
-  }
+  // Build sign message permissions
+  const signPermissions: ParaPermission[] = allowedChains.map(chainId => ({
+    effect: 'ALLOW' as const,
+    chainId,
+    type: 'SIGN_MESSAGE' as const,
+    conditions: [],
+  }));
 
-  globalConditions.push({
-    type: 'action',
-    operator: 'notEquals',
-    value: 'deploy',
-  });
+  // Build DENY permissions for contract deployment (security)
+  const denyDeployPermissions: ParaPermission[] = allowedChains.map(chainId => ({
+    effect: 'DENY' as const,
+    chainId,
+    type: 'DEPLOY_CONTRACT' as const,
+    conditions: [],
+  }));
 
-  const descParts: string[] = [];
-  descParts.push(options.restrictToBase ? 'Base only' : 'Multiple chains');
-  if (options.maxUsd && options.maxUsd > 0) {
-    descParts.push(`max $${options.maxUsd} USD/tx`);
-  }
+  // Build description
+  const limitDesc = options.maxUsd ? ` up to $${options.maxUsd} USD` : '';
+  const chainDesc = options.restrictToBase ? ' on Base' : '';
 
   return {
-    version: '1.0',
-    name: options.name || 'Child Allowance Policy',
-    description: `Child wallet policy: ${descParts.join(', ')}`,
-    allowedChains,
-    globalConditions,
+    partnerId: PARTNER_ID,
+    validFrom: Date.now(),
     scopes: [
       {
-        name: 'Send Funds',
-        description: `Allow sending ETH${options.maxUsd ? ` up to $${options.maxUsd} USD` : ''}${options.restrictToBase ? ' on Base' : ''}`,
+        name: 'transfer',
+        description: `Allow sending funds${limitDesc}${chainDesc}`,
         required: true,
-        permissions: [{ type: 'transfer', conditions: [] }],
+        permissions: transferPermissions,
       },
       {
-        name: 'Sign Messages',
+        name: 'sign_messages',
         description: 'Allow signing messages for verification',
         required: false,
-        permissions: [{ type: 'sign', conditions: [] }],
+        permissions: signPermissions,
+      },
+      {
+        name: 'deny_deploy',
+        description: 'Block contract deployment for security',
+        required: true,
+        permissions: denyDeployPermissions,
       },
     ],
   };
+}
+
+/**
+ * Extract allowed chains from policy
+ */
+function getAllowedChainsFromPolicy(policy: ParaPolicyJSON): string[] {
+  const chains = new Set<string>();
+  for (const scope of policy.scopes) {
+    for (const perm of scope.permissions) {
+      if (perm.effect === 'ALLOW') {
+        chains.add(perm.chainId);
+      }
+    }
+  }
+  return Array.from(chains);
+}
+
+/**
+ * Extract USD limit from policy
+ */
+function getUsdLimitFromPolicy(policy: ParaPolicyJSON): number | undefined {
+  for (const scope of policy.scopes) {
+    for (const perm of scope.permissions) {
+      if (perm.type === 'TRANSFER' && perm.effect === 'ALLOW') {
+        for (const cond of perm.conditions) {
+          if (cond.resource === 'VALUE' && cond.comparator === 'LESS_THAN') {
+            return typeof cond.reference === 'number' ? cond.reference : undefined;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -207,7 +277,7 @@ async function createWalletViaPara(
       env: paraEnv,
       parentAddress: parentAddress.substring(0, 10) + '...',
       childIdentifier: childIdentifier.substring(0, 30) + '...',
-      policyName: policy.name,
+      partnerId: policy.partnerId,
     });
 
     const sdk = await getParaSDK();
@@ -302,7 +372,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 402, paymentResult.error || 'Payment required');
     }
 
-    // Step 2: Build policy
+    // Step 2: Build policy using official Para schema
     const policy = buildParaPolicy({
       restrictToBase: body.restrictToBase ?? false,
       maxUsd: body.maxUsd,
@@ -310,9 +380,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     console.log('[Server] Built policy:', {
-      name: policy.name,
-      allowedChains: policy.allowedChains,
-      conditionCount: policy.globalConditions.length,
+      partnerId: policy.partnerId,
+      scopeCount: policy.scopes.length,
+      allowedChains: getAllowedChainsFromPolicy(policy),
+      usdLimit: getUsdLimitFromPolicy(policy),
     });
 
     // Step 3: Create wallet via Para
@@ -323,14 +394,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Step 4: Return success
+    const allowedChains = getAllowedChainsFromPolicy(policy);
     return res.status(200).json({
       success: true,
       walletAddress: walletResult.walletAddress,
       walletId: walletResult.walletId,
       policy: {
-        name: policy.name,
-        allowedChains: policy.allowedChains,
-        hasUsdLimit: policy.globalConditions.some(c => c.type === 'value'),
+        partnerId: policy.partnerId,
+        allowedChains,
+        hasUsdLimit: getUsdLimitFromPolicy(policy) !== undefined,
         usdLimit: body.maxUsd,
         restrictToBase: body.restrictToBase,
       },

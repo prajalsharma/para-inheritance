@@ -28,15 +28,13 @@ import {
 import { TransactionTester } from './TransactionTester';
 
 const ALL_BLOCKED_ACTIONS: BlockedAction[] = [
-  'CONTRACT_DEPLOY',
-  'CONTRACT_INTERACTION',
-  'SIGN_ARBITRARY_MESSAGE',
-  'APPROVE_TOKEN_SPEND',
-  'NFT_TRANSFER',
+  'DEPLOY_CONTRACT',
+  'SMART_CONTRACT',
+  'SIGN_MESSAGE',
 ];
 
 const REQUIRED_BLOCKED_ACTIONS: BlockedAction[] = [
-  'CONTRACT_DEPLOY',
+  'DEPLOY_CONTRACT',
 ];
 
 export function PermissionPolicyScreen() {
