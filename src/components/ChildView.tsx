@@ -1,28 +1,36 @@
 /**
  * Child View Component
  *
- * Shows the child their:
- * - Wallet information
- * - Permission rules (read-only)
+ * Shows the child their allowance wallet information on first login:
+ * - Human-readable allowance rules (what they can/cannot do)
+ * - Raw Para Policy JSON (optional view)
  *
- * Displays the ACTUAL configured values set by parent:
- * - Chain restriction (Base only or any chain)
- * - Spending limit (parent-defined amount)
+ * Rules come from the Para Policy constructed by the parent:
+ *   - Chain: Base only
+ *   - Max transaction value (USD)
+ *   - Blocked: DEPLOY_CONTRACT, SMART_CONTRACT
+ *   - Optional: recipient address allowlist
  *
- * Children CANNOT modify their policy - they can only view it.
+ * Children CANNOT modify their policy — view only.
  *
  * @see https://docs.getpara.com/v2/react/guides/permissions
- * @see https://docs.getpara.com/v2/concepts/universal-embedded-wallets
  */
 
+import { useState } from 'react';
 import { usePermissions } from '../contexts/PermissionContext';
 import { useParaAuth } from '../hooks/useParaAuth';
 import { BASE_CHAIN_ID } from '../types/permissions';
-import { TransactionTester } from './TransactionTester';
+import {
+  formatPolicyForDisplay,
+  getUsdLimitFromPolicy,
+  getDeniedActionsFromPolicy,
+  getAllowedAddressesFromPolicy,
+} from '../utils/paraPolicyBuilder';
 
 export function ChildView() {
   const { currentPolicy } = usePermissions();
   const { wallets, email } = useParaAuth();
+  const [showPolicyJSON, setShowPolicyJSON] = useState(false);
 
   if (!currentPolicy) {
     return (
@@ -51,13 +59,34 @@ export function ChildView() {
     );
   }
 
-  // Determine chain display
-  const isBaseOnly = currentPolicy.restrictToBase ||
+  // Derive display values
+  const isBaseOnly =
+    currentPolicy.restrictToBase ||
     (currentPolicy.allowedChains.length === 1 && currentPolicy.allowedChains[0] === BASE_CHAIN_ID);
-  const chainDisplay = isBaseOnly ? 'Base' : 'Any supported chain';
 
-  // Determine spending limit display
-  const hasSpendingLimit = currentPolicy.usdLimit !== undefined && currentPolicy.usdLimit > 0;
+  const hasSpendingLimit =
+    currentPolicy.usdLimit !== undefined && currentPolicy.usdLimit > 0;
+
+  // Derive denied actions from Para policy JSON (most authoritative)
+  const deniedActions = currentPolicy.paraPolicyJSON
+    ? getDeniedActionsFromPolicy(currentPolicy.paraPolicyJSON)
+    : currentPolicy.blockedActions;
+
+  // Derive allowlist from Para policy JSON
+  const allowedAddresses = currentPolicy.paraPolicyJSON
+    ? getAllowedAddressesFromPolicy(currentPolicy.paraPolicyJSON)
+    : (currentPolicy.allowedAddresses || null);
+
+  // Derive USD limit from Para policy JSON (most authoritative)
+  const policyUsdLimit = currentPolicy.paraPolicyJSON
+    ? getUsdLimitFromPolicy(currentPolicy.paraPolicyJSON)
+    : currentPolicy.usdLimit ?? null;
+
+  const humanDeniedLabels: Record<string, string> = {
+    DEPLOY_CONTRACT: 'No contract deployments',
+    SMART_CONTRACT: 'No smart contract calls',
+    SIGN_MESSAGE: 'No arbitrary message signing',
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -65,27 +94,125 @@ export function ChildView() {
         {/* Header */}
         <header className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900 mb-2">My Allowance Wallet</h1>
-          <p className="text-slate-600">
-            View your wallet rules set by your parent.
-          </p>
+          <p className="text-slate-600">Your wallet rules set by your parent — enforced by Para.</p>
         </header>
 
-        {/* My Rules - Simple Display (EXACT as required) */}
+        {/* ── Human-Readable Rules (prominent) ── */}
         <section className="bg-gradient-to-br from-primary-50 via-white to-primary-50 rounded-2xl border-2 border-primary-200 shadow-sm mb-6 p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">You can:</h2>
-          <ul className="space-y-2 text-slate-900">
-            <li className="flex items-center gap-2">
-              <span className="text-primary-600">•</span>
-              <span>{isBaseOnly ? 'Transact only on Base' : `Transact on ${chainDisplay}`}</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="text-primary-600">•</span>
-              <span>{hasSpendingLimit ? `Send transactions up to $${currentPolicy.usdLimit} USDC` : 'Send transactions (no limit set)'}</span>
-            </li>
-          </ul>
+          <h2 className="text-xl font-bold text-slate-900 mb-5">Your Allowance Rules</h2>
+
+          {/* What you CAN do */}
+          <div className="mb-5">
+            <p className="text-sm font-semibold text-success-700 uppercase tracking-wide mb-3">Allowed</p>
+            <ul className="space-y-3">
+              <li className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg className="w-3.5 h-3.5 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="text-slate-800">
+                  Transfers on <strong>Base</strong> network only{isBaseOnly ? ' (Chain 8453)' : ''}
+                </span>
+              </li>
+              <li className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg className="w-3.5 h-3.5 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="text-slate-800">
+                  {hasSpendingLimit || policyUsdLimit
+                    ? <>Send up to <strong>${policyUsdLimit ?? currentPolicy.usdLimit} USD</strong> per transaction</>
+                    : 'Send transactions (no spending limit set)'}
+                </span>
+              </li>
+              {allowedAddresses && allowedAddresses.length > 0 && (
+                <li className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3.5 h-3.5 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span className="text-slate-800">
+                      Send to <strong>{allowedAddresses.length} approved address{allowedAddresses.length !== 1 ? 'es' : ''}</strong> only
+                    </span>
+                    <div className="mt-2 space-y-1">
+                      {allowedAddresses.map(addr => (
+                        <code key={addr} className="block text-xs bg-slate-100 px-2 py-1 rounded font-mono text-slate-600">
+                          {addr}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              )}
+            </ul>
+          </div>
+
+          {/* What you CANNOT do */}
+          <div>
+            <p className="text-sm font-semibold text-danger-700 uppercase tracking-wide mb-3">Blocked</p>
+            <ul className="space-y-3">
+              {deniedActions.map(action => (
+                <li key={action} className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-danger-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3.5 h-3.5 text-danger-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <span className="text-slate-800">{humanDeniedLabels[action] || action}</span>
+                </li>
+              ))}
+              {!isBaseOnly && (
+                <li className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-danger-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3.5 h-3.5 text-danger-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <span className="text-slate-800">No transactions outside allowed chains</span>
+                </li>
+              )}
+            </ul>
+          </div>
         </section>
 
-        {/* My Wallet */}
+        {/* ── Para Policy JSON (raw, optional view) ── */}
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Para Policy JSON</h2>
+              <p className="text-sm text-slate-500 mt-0.5">Raw policy submitted to Para for enforcement</p>
+            </div>
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setShowPolicyJSON(!showPolicyJSON)}
+            >
+              {showPolicyJSON ? 'Hide' : 'View'} Policy JSON
+            </button>
+          </div>
+          {showPolicyJSON && (
+            <div className="px-6 py-4">
+              {currentPolicy.paraPolicyJSON ? (
+                <>
+                  <div className="mb-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-600 font-mono space-y-1">
+                    <p><span className="text-slate-400">// Structure: Policy → Scopes → Permissions → Conditions</span></p>
+                    <p><span className="text-slate-400">// Enforcement: Para Backend (not client-side)</span></p>
+                  </div>
+                  <pre className="p-4 bg-slate-900 text-slate-100 rounded-xl text-xs overflow-x-auto leading-relaxed">
+                    {formatPolicyForDisplay(currentPolicy.paraPolicyJSON)}
+                  </pre>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 italic">Para Policy JSON not generated for this policy.</p>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ── My Wallet ── */}
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
           <div className="px-6 py-4 border-b border-slate-100">
             <h2 className="text-lg font-semibold text-slate-900">My Wallet</h2>
@@ -99,7 +226,7 @@ export function ChildView() {
             )}
             {wallets[0] && (
               <div>
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Wallet Address</span>
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Wallet Address (Para)</span>
                 <p className="mt-1 font-mono text-sm text-slate-700 bg-slate-50 px-3 py-2 rounded-lg break-all">
                   {wallets[0].address}
                 </p>
@@ -108,7 +235,7 @@ export function ChildView() {
           </div>
         </section>
 
-        {/* Parent Info */}
+        {/* ── Parent Info ── */}
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
           <div className="px-6 py-4 border-b border-slate-100">
             <h2 className="text-lg font-semibold text-slate-900">Parent Account</h2>
@@ -120,17 +247,6 @@ export function ChildView() {
             </p>
           </div>
         </section>
-
-        {/* Transaction Tester - Demonstrates Para Policy Enforcement */}
-        {currentPolicy.childWalletAddress && (
-          <section className="mb-6">
-            <TransactionTester
-              walletAddress={currentPolicy.childWalletAddress}
-              allowedChains={currentPolicy.allowedChains}
-              usdLimit={currentPolicy.usdLimit}
-            />
-          </section>
-        )}
 
         {/* Footer */}
         <footer className="text-center py-6">
