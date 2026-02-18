@@ -94,9 +94,11 @@ export type BlockedAction =
 /**
  * Permission policy that defines what a child account can do
  *
- * Parent explicitly configures:
- * - Whether to restrict to Base only (optional toggle)
- * - Maximum USD spending limit (parent-defined value)
+ * Per spec:
+ * - Chain is always Base (restrictToBase is always true)
+ * - Max USD limit (default $15, parent-configurable)
+ * - Blocked: DEPLOY_CONTRACT, SMART_CONTRACT
+ * - Optional allowlist for recipient addresses
  */
 export interface PermissionPolicy {
   /** Unique identifier for the policy */
@@ -109,12 +111,14 @@ export interface PermissionPolicy {
   childWalletAddress?: string;
   /** List of blocked actions */
   blockedActions: BlockedAction[];
-  /** USD spending limit (parent-defined, optional) */
+  /** USD spending limit per transaction */
   usdLimit?: number;
-  /** Whether to restrict to Base chain only */
+  /** Whether to restrict to Base chain only (always true per spec) */
   restrictToBase: boolean;
   /** Chains the child can interact with */
   allowedChains: string[];
+  /** Optional allowlist of recipient wallet addresses */
+  allowedAddresses?: string[];
   /** Whether the policy is currently active */
   isActive: boolean;
   /** Compiled Para Policy JSON */
